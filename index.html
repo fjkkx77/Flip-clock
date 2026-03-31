@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>完美自适应 - 翻页时钟 (全功能最终版)</title>
+    <title>完美自适应 - 翻页时钟 (高可读性修复版)</title>
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* 颜色变量 */
+            /* 基础颜色变量 (默认暗色) */
             --bg-color: #000000;
             --card-bg: #141414;
             --text-color: #f0f0f0;
@@ -15,12 +15,22 @@
             --ui-text-active: #ffffff;
             --split-line: #000000;
             
-            /* 核心流式响应尺寸系统 (微调比例，给宽数字更多呼吸空间) */
-            --card-w: clamp(110px, 18vw, 260px);      /* 略微加宽卡片总宽度 */
-            --card-h: clamp(140px, 24vw, 340px);      /* 卡片总高度保持 */
-            --digit-w: calc(var(--card-w) / 2);       /* 单个数字占一半 */
-            --font-sz: clamp(100px, 17vw, 250px);     /* 字号略微缩小一点点，留出留白 */
-            --card-gap: clamp(16px, 4vw, 80px);       /* 卡片之间的自适应间距 */
+            /* UI 控件动态颜色变量 (按钮、输入框、弹窗) */
+            --btn-bg: rgba(255, 255, 255, 0.08);
+            --btn-text: #ffffff;
+            --btn-border: rgba(255, 255, 255, 0.1);
+            --btn-hover: rgba(255, 255, 255, 0.15);
+            --input-bg: rgba(255, 255, 255, 0.05);
+            --input-border: rgba(255, 255, 255, 0.15);
+            --input-text: #ffffff;
+            --modal-content-bg: rgba(28, 28, 30, 0.9);
+            
+            /* 核心流式响应尺寸系统 */
+            --card-w: clamp(110px, 18vw, 260px);      
+            --card-h: clamp(140px, 24vw, 340px);      
+            --digit-w: calc(var(--card-w) / 2);       
+            --font-sz: clamp(100px, 17vw, 250px);     
+            --card-gap: clamp(16px, 4vw, 80px);       
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
@@ -33,7 +43,7 @@
             overflow: hidden; user-select: none; transition: background-color 0.4s ease;
         }
 
-        /* ======= 顶部导航 (移除右上角设置) ======= */
+        /* ======= 顶部导航 ======= */
         .top-bar {
             display: flex; justify-content: space-between; align-items: center;
             padding: clamp(16px, 3vh, 32px) clamp(20px, 4vw, 60px); 
@@ -41,10 +51,9 @@
         }
         .icon-btn { cursor: pointer; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; transition: 0.3s; }
         .icon-btn svg { fill: var(--ui-text); width: 22px; height: 22px; transition: 0.3s; }
-        .icon-btn:hover { background: rgba(255,255,255,0.08); }
+        .icon-btn:hover { background: var(--btn-bg); }
         .icon-btn:hover svg { fill: var(--ui-text-active); }
 
-        /* 使用透明占位符保持导航居中 */
         .spacer { width: 44px; height: 44px; pointer-events: none; }
 
         .nav-menu { display: flex; gap: clamp(20px, 3vw, 50px); }
@@ -96,7 +105,7 @@
             background: var(--card-bg); color: var(--text-color);
             font-family: 'Oswald', sans-serif; font-weight: 600; font-size: var(--font-sz);
             overflow: hidden; transform-style: preserve-3d; backface-visibility: hidden;
-            font-variant-numeric: tabular-nums; /* 强制等宽数字 */
+            font-variant-numeric: tabular-nums; 
         }
 
         .half span {
@@ -123,16 +132,15 @@
             100% { transform: rotateX(0deg); filter: brightness(1); }
         }
 
-        /* 按钮与辅助 */
+        /* ======= 动态颜色适配：按钮与输入框 ======= */
         .btn-apple {
-            background-color: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.1); 
+            background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--btn-border); 
             padding: 12px 35px; font-size: 16px; border-radius: 30px; cursor: pointer; 
             transition: all 0.3s; font-weight: 500; backdrop-filter: blur(5px);
         }
-        .btn-apple:hover { background-color: rgba(255,255,255,0.15); transform: translateY(-2px); }
+        .btn-apple:hover { background-color: var(--btn-hover); transform: translateY(-2px); }
         .btn-apple:active { transform: scale(0.96); }
         
-        /* 倒计时专用 UI */
         .sub-tab-container { display: flex; gap: 30px; margin-bottom: 25px; }
         .sub-tab { cursor: pointer; font-size: 16px; color: var(--ui-text); transition: 0.3s; font-weight: 500; padding-bottom: 4px; }
         .sub-tab:hover { color: var(--ui-text-active); }
@@ -140,20 +148,20 @@
         
         .time-input-group { display: flex; gap: 15px; align-items: center; margin-bottom: 30px; }
         .time-input {
-            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #fff; font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 500;
+            background: var(--input-bg); border: 1px solid var(--input-border);
+            color: var(--input-text); font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 500;
             padding: 8px 10px; border-radius: 8px; width: 60px; text-align: center; outline: none; transition: 0.3s;
         }
-        .time-input:focus { border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.1); }
-        .time-label { color: var(--ui-text); font-size: 14px; }
+        .time-input:focus { border-color: var(--ui-text-active); }
+        .time-label { color: var(--ui-text); font-size: 14px; font-weight: 500; }
 
-        /* 模态框简易样式 */
-        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; justify-content:center; align-items:center; z-index:1000; opacity:0; transition:0.3s; }
+        /* 模态框样式跟随主题 */
+        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; justify-content:center; align-items:center; z-index:1000; opacity:0; transition:0.3s; }
         .modal-overlay.active { display:flex; opacity:1; }
-        .modal-content { background:rgba(28,28,30,0.9); width:90%; max-width:500px; padding:35px; border-radius:24px; border:1px solid rgba(255,255,255,0.1); position:relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
+        .modal-content { background: var(--modal-content-bg); width:90%; max-width:500px; padding:35px; border-radius:24px; border:1px solid rgba(128,128,128,0.2); position:relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); transition: background-color 0.4s; }
         .theme-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:24px; }
-        .theme-card { padding:20px; border-radius:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); text-align:center; cursor:pointer; transition: 0.2s; }
-        .theme-card:hover { background:rgba(255,255,255,0.08); transform: translateY(-3px); }
+        .theme-card { padding:20px; border-radius:16px; background:var(--input-bg); border:1px solid var(--input-border); text-align:center; cursor:pointer; transition: 0.2s; }
+        .theme-card:hover { border-color: var(--ui-text-active); transform: translateY(-3px); }
     </style>
 </head>
 <body>
@@ -176,7 +184,7 @@
     </div>
 
     <div class="view-container" id="view-pomodoro">
-        <div class="date-display" style="color: transparent; user-select: none;">保持高度一致</div>
+        <div class="date-display" style="color: transparent; user-select: none;">占位</div>
         <div class="clock-container" id="pomo-dom" style="margin-bottom: 4vh;"></div>
         <div style="display: flex; gap: 20px;">
             <button class="btn-apple" id="pomodoro-btn" onclick="togglePomodoro()">开始专注</button>
@@ -198,7 +206,7 @@
 
         <div class="clock-container" id="timer-dom" style="margin-bottom: 4vh;"></div>
         <div style="display: flex; gap: 20px;">
-            <button class="btn-apple" id="timer-btn" onclick="toggleTimer()" style="background: rgba(48,209,88,0.2); color: #30d158; border-color: rgba(48,209,88,0.3);">开始</button>
+            <button class="btn-apple" id="timer-btn" onclick="toggleTimer()">开始</button>
             <button class="btn-apple" onclick="resetTimer()">重置</button>
         </div>
     </div>
@@ -212,12 +220,12 @@
 
     <div class="modal-overlay" id="theme-modal" onclick="if(event.target===this) this.classList.remove('active')">
         <div class="modal-content">
-            <h3 style="color:#fff; text-align:center; margin-bottom:24px; font-weight: 500;">外观设置</h3>
+            <h3 style="color:var(--ui-text-active); text-align:center; margin-bottom:24px; font-weight: 500;">外观设置</h3>
             <div class="theme-grid">
-                <div class="theme-card" onclick="applyTheme('#000', '#141414', '#f0f0f0')">
+                <div class="theme-card" onclick="applyTheme('#000000', '#141414', '#f0f0f0', false)">
                     <span style="font-family:'Oswald'; font-size: 36px; color: #f0f0f0; font-weight:600;">12:00</span><br><span style="color: #888; font-size:14px;">暗夜经典</span>
                 </div>
-                <div class="theme-card" onclick="applyTheme('#f5f5f7', '#ffffff', '#1d1d1f')">
+                <div class="theme-card" onclick="applyTheme('#f5f5f7', '#ffffff', '#1d1d1f', true)">
                     <span style="font-family:'Oswald'; font-size: 36px; color: #1d1d1f; font-weight:600;">12:00</span><br><span style="color: #888; font-size:14px;">晨曦极简</span>
                 </div>
             </div>
@@ -319,13 +327,14 @@
             if (isPRun) { 
                 clearInterval(pTimer); 
                 btn.textContent = "继续专注"; 
-                btn.style.backgroundColor = "rgba(255,255,255,0.08)";
-                btn.style.color = "#fff";
-                btn.style.borderColor = "rgba(255,255,255,0.1)";
+                // 恢复为跟随主题的默认按钮样式
+                btn.style.backgroundColor = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
             } else { 
                 pTimer = setInterval(() => { if (pTime > 0) { pTime--; updatePomo(); } else clearInterval(pTimer); }, 1000); 
                 btn.textContent = "暂停专注"; 
-                btn.style.backgroundColor = "rgba(255,159,10,0.2)";
+                btn.style.backgroundColor = "rgba(255,159,10,0.15)";
                 btn.style.color = "#ff9f0a";
                 btn.style.borderColor = "rgba(255,159,10,0.3)";
             }
@@ -336,13 +345,13 @@
             clearInterval(pTimer); isPRun = false; pTime = 25 * 60; updatePomo();
             const btn = document.getElementById('pomodoro-btn');
             btn.textContent = "开始专注";
-            btn.style.backgroundColor = "rgba(255,255,255,0.08)";
-            btn.style.color = "#fff";
-            btn.style.borderColor = "rgba(255,255,255,0.1)";
+            btn.style.backgroundColor = '';
+            btn.style.color = '';
+            btn.style.borderColor = '';
         }
 
-        // === 计时器逻辑 (支持正倒计时) ===
-        let timerMode = 'up'; // 'up' or 'down'
+        // === 计时器逻辑 ===
+        let timerMode = 'up'; 
         let tTime = 0, tTimer = null, isTRun = false, targetCdTime = 0;
         
         function updateTimer() { setTimePair('t-h', Math.floor(tTime/3600)); setTimePair('t-m', Math.floor((tTime%3600)/60)); setTimePair('t-s', tTime%60); }
@@ -369,7 +378,8 @@
             if (isTRun) { 
                 clearInterval(tTimer); 
                 btn.textContent = "继续"; 
-                btn.style.backgroundColor = "rgba(255,159,10,0.2)";
+                // 橙色系，明暗皆清晰
+                btn.style.backgroundColor = "rgba(255,159,10,0.15)";
                 btn.style.color = "#ff9f0a";
                 btn.style.borderColor = "rgba(255,159,10,0.3)";
             } else { 
@@ -381,7 +391,8 @@
                     }
                 }, 1000); 
                 btn.textContent = "暂停"; 
-                btn.style.backgroundColor = "rgba(255,59,48,0.2)"; 
+                // 红色系，明暗皆清晰
+                btn.style.backgroundColor = "rgba(255,59,48,0.15)"; 
                 btn.style.color = "#ff3b30";
                 btn.style.borderColor = "rgba(255,59,48,0.3)";
             }
@@ -394,19 +405,51 @@
             updateTimer(); 
             const btn = document.getElementById('timer-btn');
             btn.textContent = "开始"; 
-            btn.style.backgroundColor = "rgba(48,209,88,0.2)";
-            btn.style.color = "#30d158";
-            btn.style.borderColor = "rgba(48,209,88,0.3)";
+            // 恢复为跟随主题的默认按钮样式
+            btn.style.backgroundColor = '';
+            btn.style.color = '';
+            btn.style.borderColor = '';
         }
 
-        // === 外观与全屏 ===
-        function applyTheme(bg, card, text) {
+        // === 智能主题控制 ===
+        function applyTheme(bg, card, text, isLightMode) {
+            // 基础背景和文字
             document.documentElement.style.setProperty('--bg-color', bg);
             document.documentElement.style.setProperty('--card-bg', card);
             document.documentElement.style.setProperty('--text-color', text);
-            document.documentElement.style.setProperty('--ui-text', bg === '#f5f5f7' ? '#888' : '#888');
-            document.documentElement.style.setProperty('--ui-text-active', bg === '#f5f5f7' ? '#000' : '#fff');
-            document.documentElement.style.setProperty('--split-line', bg === '#f5f5f7' ? 'rgba(0,0,0,0.1)' : '#000');
+            
+            if (isLightMode) {
+                // 浅色模式变量设置
+                document.documentElement.style.setProperty('--ui-text', '#888888');
+                document.documentElement.style.setProperty('--ui-text-active', '#000000');
+                document.documentElement.style.setProperty('--split-line', 'rgba(0,0,0,0.1)');
+                
+                document.documentElement.style.setProperty('--btn-bg', 'rgba(0,0,0,0.05)');
+                document.documentElement.style.setProperty('--btn-text', '#1d1d1f');
+                document.documentElement.style.setProperty('--btn-border', 'rgba(0,0,0,0.1)');
+                document.documentElement.style.setProperty('--btn-hover', 'rgba(0,0,0,0.1)');
+                
+                document.documentElement.style.setProperty('--input-bg', 'rgba(0,0,0,0.03)');
+                document.documentElement.style.setProperty('--input-border', 'rgba(0,0,0,0.15)');
+                document.documentElement.style.setProperty('--input-text', '#1d1d1f');
+                document.documentElement.style.setProperty('--modal-content-bg', 'rgba(255, 255, 255, 0.95)');
+            } else {
+                // 暗色模式变量设置
+                document.documentElement.style.setProperty('--ui-text', '#888888');
+                document.documentElement.style.setProperty('--ui-text-active', '#ffffff');
+                document.documentElement.style.setProperty('--split-line', '#000000');
+                
+                document.documentElement.style.setProperty('--btn-bg', 'rgba(255,255,255,0.08)');
+                document.documentElement.style.setProperty('--btn-text', '#ffffff');
+                document.documentElement.style.setProperty('--btn-border', 'rgba(255,255,255,0.1)');
+                document.documentElement.style.setProperty('--btn-hover', 'rgba(255,255,255,0.15)');
+                
+                document.documentElement.style.setProperty('--input-bg', 'rgba(255,255,255,0.05)');
+                document.documentElement.style.setProperty('--input-border', 'rgba(255,255,255,0.15)');
+                document.documentElement.style.setProperty('--input-text', '#ffffff');
+                document.documentElement.style.setProperty('--modal-content-bg', 'rgba(28, 28, 30, 0.9)');
+            }
+            
             document.getElementById('theme-modal').classList.remove('active');
         }
 
