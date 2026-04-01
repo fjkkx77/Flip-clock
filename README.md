@@ -17,7 +17,12 @@
 ---
 
 ## 🖼️ 项目预览
-（后续可补充项目截图）
+<img width="1152" height="644" alt="PixPin_2026-04-01_08-36-46" src="https://github.com/user-attachments/assets/ff8657f1-fcba-42d9-af49-a9bc17542367" />
+<img width="1150" height="643" alt="PixPin_2026-04-01_08-37-14" src="https://github.com/user-attachments/assets/7d13573a-7309-4e9f-8e0a-b9845c930b93" />
+<img width="1150" height="641" alt="PixPin_2026-04-01_08-37-29" src="https://github.com/user-attachments/assets/a13ecd6b-657d-4ac2-bc89-941a232be5a5" />
+<img width="1150" height="645" alt="PixPin_2026-04-01_08-37-49" src="https://github.com/user-attachments/assets/8ad1a8de-7064-458a-ae39-c22dc985ad56" />
+<img width="1150" height="645" alt="PixPin_2026-04-01_08-37-58" src="https://github.com/user-attachments/assets/ecfe3b6f-9bd5-423b-921d-976a274482e3" />
+
 
 ---
 
