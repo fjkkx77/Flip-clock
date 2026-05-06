@@ -190,7 +190,7 @@
         <div class="spacer"></div> </div>
 
     <div class="view-container active" id="view-clock">
-        <div class="date-display" id="date-display">2026年3月31日 二月十三 周二</div>
+        <div class="date-display" id="date-display">日期加载中...</div>
         <div class="clock-container" id="clock-dom"></div>
         <div class="quote" id="quote-text" contenteditable="true" spellcheck="false" title="点击编辑">心态代表风水</div>
     </div>
@@ -304,7 +304,7 @@
             flipSingleDigit(prefix + '2', strVal[1]); 
         }
 
-        /* ================= 3. 时钟与实时日期运行 ================= */
+        /* ================= 3. 时钟与实时农历日期运行 ================= */
         function updateClock() {
             const now = new Date();
             setTimePair('c-h', now.getHours());
@@ -313,7 +313,25 @@
 
             const y = now.getFullYear(); const m = now.getMonth() + 1; const d = now.getDate();
             const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-            document.getElementById('date-display').textContent = `${y}年${m}月${d}日 二月十三 ${days[now.getDay()]}`;
+            
+            // 动态获取真实农历
+            let lunarStr = "";
+            try {
+                const dateStr = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'numeric', day: 'numeric' }).format(now);
+                const nums = dateStr.match(/\d+/g);
+                const isLeap = dateStr.includes('闰');
+                if (nums && nums.length >= 2) {
+                    const lm = parseInt(nums[0]);
+                    const ld = parseInt(nums[1]);
+                    const monthMap = ['','正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','冬月','腊月'];
+                    const dayMap = ['','初一','初二','初三','初四','初五','初六','初七','初八','初九','初十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十'];
+                    lunarStr = (isLeap ? '闰' : '') + (monthMap[lm] || lm + '月') + (dayMap[ld] || ld);
+                }
+            } catch(e) {
+                lunarStr = "";
+            }
+
+            document.getElementById('date-display').textContent = `${y}年${m}月${d}日 ${lunarStr} ${days[now.getDay()]}`;
         }
         setInterval(updateClock, 1000); updateClock();
 
