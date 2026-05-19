@@ -2,8 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>完美自适应 - 翻页时钟 (沉浸式全屏版)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>完美自适应 - 翻页时钟 (全平台终极版)</title>
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -26,11 +28,21 @@
             --modal-content-bg: rgba(28, 28, 30, 0.9);
             
             /* 核心流式响应尺寸系统 */
-            --card-w: clamp(110px, 18vw, 260px);      
+            --card-w: clamp(110px, 18vw, 260px);
             --card-h: clamp(140px, 24vw, 340px);      
             --digit-w: calc(var(--card-w) / 2);       
             --font-sz: clamp(100px, 17vw, 250px);     
-            --card-gap: clamp(16px, 4vw, 80px);       
+            --card-gap: clamp(16px, 4vw, 80px);
+        }
+
+        /* 智能响应：当设备处于“竖屏”状态时自动触发 */
+        @media (orientation: portrait) {
+            :root {
+                --card-w: clamp(80px, 29vw, 260px);
+                --card-h: clamp(110px, 38vw, 340px);
+                --font-sz: clamp(75px, 25vw, 250px);
+                --card-gap: clamp(6px, 2vw, 20px);
+            }
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
@@ -41,6 +53,9 @@
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
             height: 100vh; display: flex; flex-direction: column; justify-content: space-between;
             overflow: hidden; user-select: none; transition: background-color 0.4s ease;
+            /* 适配苹果手机底部的安全距离 */
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-top: env(safe-area-inset-top);
         }
 
         /* 隐藏鼠标指针专用 Class */
@@ -51,7 +66,6 @@
             display: flex; justify-content: space-between; align-items: center;
             padding: clamp(16px, 3vh, 32px) clamp(20px, 4vw, 60px); 
             font-size: 14px; font-weight: 500; z-index: 100;
-            /* 加入透明度渐变动画，使淡入淡出更柔和 */
             transition: opacity 0.8s ease, color 0.3s;
         }
         
@@ -65,11 +79,12 @@
         .icon-btn svg { fill: var(--ui-text); width: 22px; height: 22px; transition: 0.3s; }
         .icon-btn:hover { background: var(--btn-bg); }
         .icon-btn:hover svg { fill: var(--ui-text-active); }
+        .icon-btn { -webkit-tap-highlight-color: transparent; }
 
         .spacer { width: 44px; height: 44px; pointer-events: none; }
 
         .nav-menu { display: flex; gap: clamp(20px, 3vw, 50px); }
-        .nav-item { cursor: pointer; position: relative; padding-bottom: 6px; transition: color 0.3s; letter-spacing: 1px;}
+        .nav-item { cursor: pointer; position: relative; padding-bottom: 6px; transition: color 0.3s; letter-spacing: 1px; -webkit-tap-highlight-color: transparent;}
         .nav-item:hover { color: var(--ui-text-active); }
         .nav-item.active { color: var(--ui-text-active); font-weight: 600; }
         .nav-item.active::after {
@@ -85,13 +100,13 @@
 
         /* ======= 排版细节 ======= */
         .date-display { 
-            font-size: clamp(16px, 1.5vw, 22px); color: var(--ui-text); 
-            margin-bottom: clamp(20px, 4vh, 60px); letter-spacing: 2px; font-weight: 500; 
+            font-size: clamp(14px, 1.5vw, 22px); color: var(--ui-text); 
+            margin-bottom: clamp(15px, 4vh, 60px); letter-spacing: 2px; font-weight: 500; 
         }
         .quote { 
-            font-size: clamp(14px, 1.2vw, 18px); color: var(--ui-text); 
+            font-size: clamp(12px, 1.2vw, 18px); color: var(--ui-text); 
             letter-spacing: 3px; cursor: text; outline: none; padding: 10px; 
-            transition: 0.3s; margin-top: clamp(30px, 6vh, 80px); 
+            transition: 0.3s; margin-top: clamp(20px, 6vh, 80px); 
         }
         .quote:focus { color: var(--ui-text-active); border-bottom: 1px solid var(--ui-text); }
 
@@ -149,20 +164,21 @@
             background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--btn-border); 
             padding: 12px 35px; font-size: 16px; border-radius: 30px; cursor: pointer; 
             transition: all 0.3s; font-weight: 500; backdrop-filter: blur(5px);
+            -webkit-tap-highlight-color: transparent;
         }
         .btn-apple:hover { background-color: var(--btn-hover); transform: translateY(-2px); }
         .btn-apple:active { transform: scale(0.96); }
         
         .sub-tab-container { display: flex; gap: 30px; margin-bottom: 25px; }
-        .sub-tab { cursor: pointer; font-size: 16px; color: var(--ui-text); transition: 0.3s; font-weight: 500; padding-bottom: 4px; }
+        .sub-tab { cursor: pointer; font-size: 16px; color: var(--ui-text); transition: 0.3s; font-weight: 500; padding-bottom: 4px; -webkit-tap-highlight-color: transparent;}
         .sub-tab:hover { color: var(--ui-text-active); }
         .sub-tab.active { color: var(--ui-text-active); border-bottom: 2px solid var(--ui-text-active); }
         
-        .time-input-group { display: flex; gap: 15px; align-items: center; margin-bottom: 30px; }
+        .time-input-group { display: flex; gap: 10px; align-items: center; margin-bottom: 30px; }
         .time-input {
             background: var(--input-bg); border: 1px solid var(--input-border);
-            color: var(--input-text); font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 500;
-            padding: 8px 10px; border-radius: 8px; width: 60px; text-align: center; outline: none; transition: 0.3s;
+            color: var(--input-text); font-family: 'Oswald', sans-serif; font-size: 18px; font-weight: 500;
+            padding: 8px 5px; border-radius: 8px; width: 50px; text-align: center; outline: none; transition: 0.3s;
         }
         .time-input:focus { border-color: var(--ui-text-active); }
         .time-label { color: var(--ui-text); font-size: 14px; font-weight: 500; }
@@ -170,10 +186,19 @@
         /* 模态框样式 */
         .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; justify-content:center; align-items:center; z-index:1000; opacity:0; transition:0.3s; }
         .modal-overlay.active { display:flex; opacity:1; }
-        .modal-content { background: var(--modal-content-bg); width:90%; max-width:500px; padding:35px; border-radius:24px; border:1px solid rgba(128,128,128,0.2); position:relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); transition: background-color 0.4s; }
+        .modal-content { background: var(--modal-content-bg); width:85%; max-width:500px; padding:35px; border-radius:24px; border:1px solid rgba(128,128,128,0.2); position:relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); transition: background-color 0.4s; }
         .theme-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:24px; }
-        .theme-card { padding:20px; border-radius:16px; background:var(--input-bg); border:1px solid var(--input-border); text-align:center; cursor:pointer; transition: 0.2s; }
-        .theme-card:hover { border-color: var(--ui-text-active); transform: translateY(-3px); }
+        
+        /* 针对预览卡片的样式固化修复，杜绝颜色塌陷 */
+        .theme-card { 
+            padding:20px; border-radius:16px; 
+            border: 2px solid var(--input-border); 
+            text-align:center; cursor:pointer; 
+            transition: all 0.3s ease; 
+            -webkit-tap-highlight-color: transparent;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .theme-card:hover { border-color: var(--ui-text-active); transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
     </style>
 </head>
 <body>
@@ -187,7 +212,8 @@
             <span class="nav-item active" onclick="switchTab('clock')">时钟</span>
             <span class="nav-item" onclick="switchTab('timer')">计时器</span>
         </div>
-        <div class="spacer"></div> </div>
+        <div class="spacer"></div> 
+    </div>
 
     <div class="view-container active" id="view-clock">
         <div class="date-display" id="date-display">日期加载中...</div>
@@ -209,6 +235,7 @@
             <div class="sub-tab active" onclick="setTimerMode('up', this)">正计时</div>
             <div class="sub-tab" onclick="setTimerMode('down', this)">倒计时</div>
         </div>
+        
         <div class="time-input-group" id="countdown-inputs" style="display: none;">
             <input type="number" id="cd-h" class="time-input" min="0" max="99" value="0"> <span class="time-label">时</span>
             <input type="number" id="cd-m" class="time-input" min="0" max="59" value="0"> <span class="time-label">分</span>
@@ -217,13 +244,14 @@
         </div>
 
         <div class="clock-container" id="timer-dom" style="margin-bottom: 4vh;"></div>
-        <div style="display: flex; gap: 20px;">
+        <div style="display: flex; gap: 20px; align-items: center; justify-content: center;">
             <button class="btn-apple" id="timer-btn" onclick="toggleTimer()">开始</button>
             <button class="btn-apple" onclick="resetTimer()">重置</button>
+            <button class="btn-apple" id="timer-clear-btn" style="display: none;" onclick="clearTimer()">清除</button>
         </div>
     </div>
 
-    <div class="top-bar" style="margin-top: auto; padding-bottom: 30px;">
+    <div class="top-bar" style="margin-top: auto; padding-bottom: clamp(10px, 3vh, 30px);">
         <div class="icon-btn" id="fullscreen-btn" title="全屏沉浸模式">
             <svg viewBox="0 0 24 24"><path d="M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z"/></svg>
         </div>
@@ -234,11 +262,11 @@
         <div class="modal-content">
             <h3 style="color:var(--ui-text-active); text-align:center; margin-bottom:24px; font-weight: 500;">外观设置</h3>
             <div class="theme-grid">
-                <div class="theme-card" onclick="applyTheme('#000000', '#141414', '#f0f0f0', false)">
-                    <span style="font-family:'Oswald'; font-size: 36px; color: #f0f0f0; font-weight:600;">12:00</span><br><span style="color: #888; font-size:14px;">暗夜经典</span>
+                <div class="theme-card" style="background-color: #141414;" onclick="applyTheme('#000000', '#141414', '#f0f0f0', false)">
+                    <span style="font-family:'Oswald', sans-serif; font-size: 36px; color: #f0f0f0; font-weight:600;">12:00</span><br><span style="color: #888888; font-size:14px;">暗夜经典</span>
                 </div>
-                <div class="theme-card" onclick="applyTheme('#f5f5f7', '#ffffff', '#1d1d1f', true)">
-                    <span style="font-family:'Oswald'; font-size: 36px; color: #1d1d1f; font-weight:600;">12:00</span><br><span style="color: #888; font-size:14px;">晨曦极简</span>
+                <div class="theme-card" style="background-color: #ffffff;" onclick="applyTheme('#f5f5f7', '#ffffff', '#1d1d1f', true)">
+                    <span style="font-family:'Oswald', sans-serif; font-size: 36px; color: #1d1d1f; font-weight:600;">12:00</span><br><span style="color: #888888; font-size:14px;">晨曦极简</span>
                 </div>
             </div>
         </div>
@@ -304,7 +332,7 @@
             flipSingleDigit(prefix + '2', strVal[1]); 
         }
 
-        /* ================= 3. 时钟与实时农历日期运行 ================= */
+        /* ================= 3. 时钟与实时农历日期运行 (高精度对齐系统时间) ================= */
         function updateClock() {
             const now = new Date();
             setTimePair('c-h', now.getHours());
@@ -314,7 +342,6 @@
             const y = now.getFullYear(); const m = now.getMonth() + 1; const d = now.getDate();
             const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
             
-            // 动态获取真实农历
             let lunarStr = "";
             try {
                 const dateStr = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'numeric', day: 'numeric' }).format(now);
@@ -327,13 +354,18 @@
                     const dayMap = ['','初一','初二','初三','初四','初五','初六','初七','初八','初九','初十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十'];
                     lunarStr = (isLeap ? '闰' : '') + (monthMap[lm] || lm + '月') + (dayMap[ld] || ld);
                 }
-            } catch(e) {
-                lunarStr = "";
-            }
+            } catch(e) { lunarStr = ""; }
 
             document.getElementById('date-display').textContent = `${y}年${m}月${d}日 ${lunarStr} ${days[now.getDay()]}`;
         }
-        setInterval(updateClock, 1000); updateClock();
+
+        function syncClock() {
+            updateClock();
+            const now = new Date();
+            const msToNextSecond = 1000 - now.getMilliseconds();
+            setTimeout(syncClock, msToNextSecond);
+        }
+        syncClock();
 
         /* ================= 4. 其他功能 ================= */
         function switchTab(tabId) {
@@ -350,18 +382,18 @@
         // === 番茄钟逻辑 ===
         let pTime = 25 * 60, pTimer = null, isPRun = false;
         function updatePomo() { setTimePair('p-m', Math.floor(pTime / 60)); setTimePair('p-s', pTime % 60); }
-        updatePomo(); 
+        updatePomo();
         
         function togglePomodoro() {
             const btn = document.getElementById('pomodoro-btn');
             if (isPRun) { 
-                clearInterval(pTimer); 
+                clearInterval(pTimer);
                 btn.textContent = "继续专注"; 
                 btn.style.backgroundColor = '';
                 btn.style.color = '';
                 btn.style.borderColor = '';
             } else { 
-                pTimer = setInterval(() => { if (pTime > 0) { pTime--; updatePomo(); } else clearInterval(pTimer); }, 1000); 
+                pTimer = setInterval(() => { if (pTime > 0) { pTime--; updatePomo(); } else clearInterval(pTimer); }, 1000);
                 btn.textContent = "暂停专注"; 
                 btn.style.backgroundColor = "rgba(255,159,10,0.15)";
                 btn.style.color = "#ff9f0a";
@@ -371,7 +403,8 @@
         }
 
         function resetPomodoro() {
-            clearInterval(pTimer); isPRun = false; pTime = 25 * 60; updatePomo();
+            clearInterval(pTimer);
+            isPRun = false; pTime = 25 * 60; updatePomo();
             const btn = document.getElementById('pomodoro-btn');
             btn.textContent = "开始专注";
             btn.style.backgroundColor = '';
@@ -380,7 +413,7 @@
         }
 
         // === 计时器逻辑 ===
-        let timerMode = 'up'; 
+        let timerMode = 'up';
         let tTime = 0, tTimer = null, isTRun = false, targetCdTime = 0;
         
         function updateTimer() { setTimePair('t-h', Math.floor(tTime/3600)); setTimePair('t-m', Math.floor((tTime%3600)/60)); setTimePair('t-s', tTime%60); }
@@ -389,7 +422,10 @@
             timerMode = mode;
             document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
             el.classList.add('active');
+            
             document.getElementById('countdown-inputs').style.display = (mode === 'down') ? 'flex' : 'none';
+            document.getElementById('timer-clear-btn').style.display = (mode === 'down') ? 'block' : 'none';
+            
             resetTimer();
         }
 
@@ -405,7 +441,7 @@
         function toggleTimer() {
             const btn = document.getElementById('timer-btn');
             if (isTRun) { 
-                clearInterval(tTimer); 
+                clearInterval(tTimer);
                 btn.textContent = "继续"; 
                 btn.style.backgroundColor = "rgba(255,159,10,0.15)";
                 btn.style.color = "#ff9f0a";
@@ -417,7 +453,7 @@
                     } else {
                         if(tTime > 0) { tTime--; updateTimer(); } else { clearInterval(tTimer); isTRun = false; btn.textContent = "时间到"; }
                     }
-                }, 1000); 
+                }, 1000);
                 btn.textContent = "暂停"; 
                 btn.style.backgroundColor = "rgba(255,59,48,0.15)"; 
                 btn.style.color = "#ff3b30";
@@ -427,11 +463,31 @@
         }
 
         function resetTimer() { 
-            clearInterval(tTimer); isTRun = false; 
+            clearInterval(tTimer);
+            isTRun = false; 
             tTime = (timerMode === 'up') ? 0 : targetCdTime;
             updateTimer(); 
             const btn = document.getElementById('timer-btn');
-            btn.textContent = "开始"; 
+            btn.textContent = "开始";
+            btn.style.backgroundColor = '';
+            btn.style.color = '';
+            btn.style.borderColor = '';
+        }
+
+        function clearTimer() {
+            clearInterval(tTimer);
+            isTRun = false; 
+            
+            document.getElementById('cd-h').value = 0;
+            document.getElementById('cd-m').value = 0;
+            document.getElementById('cd-s').value = 0;
+            
+            targetCdTime = 0;
+            tTime = 0;
+            updateTimer(); 
+            
+            const btn = document.getElementById('timer-btn');
+            btn.textContent = "开始";
             btn.style.backgroundColor = '';
             btn.style.color = '';
             btn.style.borderColor = '';
@@ -476,39 +532,58 @@
             document.getElementById('theme-modal').classList.remove('active');
         }
 
-        /* ================= 5. 沉浸式全屏静止隐藏逻辑 ================= */
+        /* ================= 5. 全平台沉浸式静止隐藏逻辑 ================= */
         const topBars = document.querySelectorAll('.top-bar');
         let idleTimer;
+        let isImmersiveMode = false;
 
         function resetIdleTimer() {
             clearTimeout(idleTimer);
-            
-            // 显示界面 UI 和鼠标指针
             topBars.forEach(bar => bar.classList.remove('idle-hidden'));
             document.body.classList.remove('idle-cursor');
 
-            // 如果当前在全屏模式中，则重新开始 5 秒静止倒计时
-            if (document.fullscreenElement) {
+            if (isImmersiveMode) {
                 idleTimer = setTimeout(() => {
                     topBars.forEach(bar => bar.classList.add('idle-hidden'));
                     document.body.classList.add('idle-cursor');
-                }, 5000); 
+                }, 5000);
             }
         }
 
-        // 监听鼠标移动、点击、键盘输入和全屏切换状态
-        ['mousemove', 'mousedown', 'keydown', 'touchstart', 'fullscreenchange'].forEach(evt => {
+        ['mousemove', 'mousedown', 'keydown', 'touchstart', 'touchmove', 'fullscreenchange'].forEach(evt => {
             document.addEventListener(evt, resetIdleTimer);
         });
 
-        // 绑定全屏按钮功能
         document.getElementById('fullscreen-btn').addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen();
+            const docEl = document.documentElement;
+            const isFull = document.fullscreenElement || document.webkitFullscreenElement;
+
+            if (!isFull) {
+                if (docEl.requestFullscreen) docEl.requestFullscreen();
+                else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
+                isImmersiveMode = true; 
             } else {
                 if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                isImmersiveMode = false; 
             }
+
+            if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen) {
+                isImmersiveMode = !isImmersiveMode;
+            }
+
+            resetIdleTimer();
         });
+
+        function checkFullscreenState() {
+            const isFull = document.fullscreenElement || document.webkitFullscreenElement;
+            if (!isFull && isImmersiveMode) {
+                isImmersiveMode = false;
+                resetIdleTimer();
+            }
+        }
+        document.addEventListener('fullscreenchange', checkFullscreenState);
+        document.addEventListener('webkitfullscreenchange', checkFullscreenState);
     </script>
 </body>
 </html>
