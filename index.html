@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>完美自适应 - 翻页时钟 (终极防遮挡版)</title>
+    <title>完美自适应 - 翻页时钟 (极限宽屏优化版)</title>
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -28,38 +28,40 @@
             --modal-content-bg: rgba(28, 28, 30, 0.9);
             
             /* 标准宽屏/电脑/物理横屏 尺寸系统 */
-            --card-w: clamp(90px, 16vw, 240px);
-            --card-h: clamp(120px, 22vw, 320px);      
+            --card-w: clamp(110px, 16vw, 240px);
+            --card-h: clamp(140px, 22vw, 320px);      
             --digit-w: calc(var(--card-w) / 2);       
-            --font-sz: clamp(80px, 16vw, 220px);     
-            --card-gap: clamp(12px, 3vw, 60px);
+            --font-sz: clamp(100px, 16vw, 220px);     
+            --card-gap: clamp(16px, 3vw, 60px);
         }
 
-        /* 手机物理竖屏状态的响应式尺寸 */
+        /* 手机物理竖屏状态的正常响应式尺寸 */
         @media (orientation: portrait) {
             :root {
-                --card-w: clamp(75px, 26vw, 260px);
-                --card-h: clamp(105px, 36vw, 340px);
-                --font-sz: clamp(70px, 24vw, 250px);
+                --card-w: clamp(75px, 28vw, 260px);
+                --card-h: clamp(110px, 38vw, 340px);
+                --font-sz: clamp(70px, 26vw, 250px);
                 --card-gap: clamp(6px, 2vw, 20px);
             }
         }
 
-        /* ★ 核心修复：针对高度较小的屏幕（包括物理横屏和强制横屏）进一步缩小卡片，为底部按钮腾出空间 ★ */
-        @media (max-height: 500px) {
-            :root {
-                --card-w: clamp(60px, 14vw, 160px);
-                --card-h: clamp(80px, 22vh, 220px);
-                --font-sz: clamp(55px, 18vh, 160px);
-                --card-gap: clamp(8px, 2vw, 15px);
-            }
-        }
+        /* ★ 魔法核心：强制横屏状态下的专属极限优化 ★ */
         body.force-landscape {
-            --card-w: clamp(60px, 14vh, 160px);
-            --card-h: clamp(80px, 22vw, 220px);
-            --font-sz: clamp(55px, 18vw, 160px);
-            --card-gap: clamp(8px, 2vh, 15px);
+            /* 卡片宽度基于物理高度(vh)，高度基于物理宽度(vw)极限拉伸 */
+            --card-w: clamp(110px, 18vh, 220px);
+            --card-h: clamp(130px, 48vw, 260px); /* 最大限度占满垂直空间 */
+            --font-sz: clamp(90px, 40vw, 220px);
+            --card-gap: clamp(12px, 3vh, 30px);
         }
+        
+        /* 强制横屏时极限压缩所有间距，为时钟和按钮腾位置，防止按钮被挤出屏幕外！ */
+        body.force-landscape .top-bar { padding-top: 5px !important; padding-bottom: 5px !important; }
+        body.force-landscape .date-display { margin-bottom: 8px !important; font-size: 14px; }
+        body.force-landscape .clock-container { margin-bottom: 12px !important; }
+        body.force-landscape .quote { margin-top: 8px !important; font-size: 14px; }
+        body.force-landscape .sub-tab-container { margin-bottom: 10px !important; }
+        body.force-landscape .time-input-group { margin-bottom: 10px !important; }
+        body.force-landscape .btn-apple { padding: 8px 25px !important; font-size: 14px !important; }
 
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
 
@@ -73,7 +75,7 @@
 
         body.idle-cursor { cursor: none !important; }
 
-        /* ======= 包装器 (负责旋转和接管安全区，JS将精确控制宽高防溢出) ======= */
+        /* ======= 包装器 ======= */
         #app-wrapper {
             position: absolute; top: 50%; left: 50%;
             width: 100%; height: 100%;
@@ -94,11 +96,10 @@
             padding-left: env(safe-area-inset-bottom);
         }
 
-        /* ======= 顶部/底部导航栏 ======= */
+        /* ======= 导航栏 ======= */
         .top-bar {
             display: flex; justify-content: space-between; align-items: center;
-            /* 弹性高度：屏幕越矮，导航栏越窄 */
-            padding: clamp(10px, 2vh, 32px) clamp(15px, 4vw, 60px); 
+            padding: clamp(16px, 3vh, 32px) clamp(20px, 4vw, 60px); 
             font-size: 14px; font-weight: 500; z-index: 100;
             transition: opacity 0.8s ease, color 0.3s;
         }
@@ -122,27 +123,27 @@
             background-color: var(--ui-text-active); border-radius: 50%;
         }
 
-        /* ======= 视图容器与排版 ======= */
+        /* ======= 视图与排版 ======= */
         .view-container { display: none; flex-direction: column; align-items: center; justify-content: center; flex: 1; width: 100%; animation: fadeIn 0.4s ease-out; }
         .view-container.active { display: flex; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* 弹性边距，防止在高度紧张时溢出屏幕 */
-        .date-display { font-size: clamp(12px, 1.5vw, 20px); color: var(--ui-text); margin-bottom: clamp(10px, 3vh, 50px); letter-spacing: 2px; font-weight: 500; }
-        .quote { font-size: clamp(12px, 1.2vw, 18px); color: var(--ui-text); letter-spacing: 3px; cursor: text; outline: none; padding: 10px; transition: 0.3s; margin-top: clamp(15px, 5vh, 60px); }
-        .quote:focus { color: var(--ui-text-active); border-bottom: 1px solid var(--ui-text); }
+        .date-display { font-size: clamp(14px, 1.5vw, 22px); color: var(--ui-text); margin-bottom: clamp(15px, 4vh, 60px); letter-spacing: 2px; font-weight: 500; }
+        .quote { font-size: clamp(12px, 1.2vw, 18px); color: var(--ui-text); letter-spacing: 3px; cursor: text; outline: none; padding: 10px; transition: 0.3s; margin-top: clamp(20px, 6vh, 80px); }
+        .quote:focus { color: var(--ui-text-active); border-bottom: 1px dashed var(--ui-text); }
         
         .clock-container { display: flex; gap: var(--card-gap); justify-content: center; align-items: center; margin-bottom: clamp(15px, 4vh, 40px); }
 
-        /* ======= 3D 翻页卡片 ======= */
+        /* ======= 3D 翻页卡片 (三重硬件加速防切割) ======= */
         .clock-group {
             display: flex; width: var(--card-w); height: var(--card-h);
-            border-radius: clamp(10px, 2vw, 24px); background-color: var(--card-bg);
+            border-radius: clamp(12px, 2vw, 24px); background-color: var(--card-bg);
             box-shadow: 0 15px 40px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.02); position: relative; overflow: hidden; 
-            transform: translateZ(0); 
-            -webkit-mask-image: -webkit-radial-gradient(white, black); /* 修复 iOS Bug */
-            mask-image: radial-gradient(white, black); /* 消除波浪线警告 */
+            /* 强制开启 GPU 加速，彻底杜绝 iOS 渲染 Bug */
+            transform: translate3d(0, 0, 0); 
+            -webkit-mask-image: -webkit-radial-gradient(white, black);
+            mask-image: radial-gradient(white, black);
         }
 
         .clock-group::after {
@@ -151,13 +152,17 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.6);
         }
 
-        .flip-digit { flex: 1; height: 100%; position: relative; perspective: 1200px; }
+        .flip-digit { flex: 1; height: 100%; position: relative; perspective: 1200px; transform: translate3d(0, 0, 0); }
 
         .half {
             position: absolute; left: 0; width: 100%; height: 50%;
             background: var(--card-bg); color: var(--text-color);
             font-family: 'Oswald', sans-serif; font-weight: 600; font-size: var(--font-sz);
-            overflow: hidden; transform-style: preserve-3d; backface-visibility: hidden;
+            overflow: hidden; transform-style: preserve-3d; 
+            /* 防闪烁强化 */
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            will-change: transform;
             font-variant-numeric: tabular-nums; 
         }
 
@@ -186,11 +191,11 @@
         }
 
         /* ======= 按钮与控制组件 ======= */
-        .btn-group { display: flex; gap: clamp(10px, 2vw, 20px); align-items: center; justify-content: center; }
+        .btn-group { display: flex; gap: clamp(10px, 2vw, 20px); align-items: center; justify-content: center; flex-wrap: wrap; }
         
         .btn-apple {
             background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--btn-border); 
-            padding: clamp(8px, 1.5vh, 12px) clamp(20px, 3vw, 35px); /* 弹性按钮大小 */
+            padding: clamp(10px, 1.5vh, 12px) clamp(20px, 3vw, 35px); 
             font-size: clamp(14px, 1.5vh, 16px); border-radius: 30px; cursor: pointer; 
             transition: all 0.3s; font-weight: 500; backdrop-filter: blur(5px);
             -webkit-tap-highlight-color: transparent;
@@ -198,12 +203,12 @@
         .btn-apple:hover { background-color: var(--btn-hover); transform: translateY(-2px); }
         .btn-apple:active { transform: scale(0.96); }
         
-        .sub-tab-container { display: flex; gap: 30px; margin-bottom: clamp(10px, 2vh, 25px); }
+        .sub-tab-container { display: flex; gap: 30px; margin-bottom: clamp(15px, 2vh, 25px); }
         .sub-tab { cursor: pointer; font-size: 14px; color: var(--ui-text); transition: 0.3s; font-weight: 500; padding-bottom: 4px; -webkit-tap-highlight-color: transparent;}
         .sub-tab:hover { color: var(--ui-text-active); }
         .sub-tab.active { color: var(--ui-text-active); border-bottom: 2px solid var(--ui-text-active); }
         
-        .time-input-group { display: flex; gap: 10px; align-items: center; margin-bottom: clamp(10px, 2vh, 25px); }
+        .time-input-group { display: flex; gap: 10px; align-items: center; margin-bottom: clamp(15px, 2vh, 30px); }
         .time-input {
             background: var(--input-bg); border: 1px solid var(--input-border);
             color: var(--input-text); font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 500;
@@ -212,7 +217,7 @@
         .time-input:focus { border-color: var(--ui-text-active); }
         .time-label { color: var(--ui-text); font-size: 14px; font-weight: 500; }
 
-        /* 模态框及固化卡片 */
+        /* ======= 模态框及主题卡片 ======= */
         .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; justify-content:center; align-items:center; z-index:1000; opacity:0; transition:0.3s; }
         .modal-overlay.active { display:flex; opacity:1; }
         .modal-content { background: var(--modal-content-bg); width:85%; max-width:500px; padding:30px; border-radius:24px; border:1px solid rgba(128,128,128,0.2); position:relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); transition: background-color 0.4s; }
@@ -270,6 +275,7 @@
             </div>
 
             <div class="clock-container" id="timer-dom"></div>
+            
             <div class="btn-group">
                 <button class="btn-apple" id="timer-btn" onclick="toggleTimer()">开始</button>
                 <button class="btn-apple" onclick="resetTimer()">重置</button>
@@ -554,12 +560,11 @@
         document.addEventListener('fullscreenchange', checkFullscreenState);
         document.addEventListener('webkitfullscreenchange', checkFullscreenState);
 
-        // ★ 核心修复：绑定强制横屏与精准尺寸计算 ★
+        // ★ 核心修复：精准计算强制横屏容器大小 ★
         const rotateBtn = document.getElementById('rotate-btn');
         function updateLandscapeDimensions() {
             const wrapper = document.getElementById('app-wrapper');
             if (document.body.classList.contains('force-landscape')) {
-                // 强制横屏时：外框的高等于屏幕的宽，宽等于屏幕的高，绝对防溢出
                 wrapper.style.width = window.innerHeight + 'px';
                 wrapper.style.height = window.innerWidth + 'px';
             } else {
@@ -574,10 +579,8 @@
             resetIdleTimer();
         });
 
-        // 智能显示/隐藏“强制横屏”按钮
         function autoHideRotateBtn() {
             if (window.innerWidth > window.innerHeight) {
-                // 物理屏幕已经是横向（电脑或横置的iPad），隐藏该按钮并解除强制横屏
                 rotateBtn.style.display = 'none';
                 document.body.classList.remove('force-landscape');
             } else {
