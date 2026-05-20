@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>完美自适应 - 翻页时钟 (极限宽屏优化版)</title>
+    <title>完美自适应 - 翻页时钟 (终极修复版)</title>
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* 基础颜色变量 (默认暗色) */
+            /* 基础颜色变量 */
             --bg-color: #000000;
             --card-bg: #141414;
             --text-color: #f0f0f0;
@@ -17,7 +17,7 @@
             --ui-text-active: #ffffff;
             --split-line: #000000;
             
-            /* UI 控件动态颜色变量 */
+            /* 控件颜色变量 */
             --btn-bg: rgba(255, 255, 255, 0.08);
             --btn-text: #ffffff;
             --btn-border: rgba(255, 255, 255, 0.1);
@@ -27,15 +27,16 @@
             --input-text: #ffffff;
             --modal-content-bg: rgba(28, 28, 30, 0.9);
             
-            /* 标准宽屏/电脑/物理横屏 尺寸系统 */
+            /* 标准宽屏/电脑尺寸系统 */
             --card-w: clamp(110px, 16vw, 240px);
             --card-h: clamp(140px, 22vw, 320px);      
             --digit-w: calc(var(--card-w) / 2);       
             --font-sz: clamp(100px, 16vw, 220px);     
             --card-gap: clamp(16px, 3vw, 60px);
+            --card-radius: clamp(12px, 2vw, 24px);
         }
 
-        /* 手机物理竖屏状态的正常响应式尺寸 */
+        /* 手机物理竖屏状态的响应式尺寸 */
         @media (orientation: portrait) {
             :root {
                 --card-w: clamp(75px, 28vw, 260px);
@@ -45,29 +46,47 @@
             }
         }
 
-        /* ★ 魔法核心：强制横屏状态下的专属极限优化 ★ */
+        /* ★ 核心魔法：横屏状态下的专属极限空间优化（适用物理横屏及强制横屏） ★ */
         body.force-landscape {
-            /* 卡片宽度基于物理高度(vh)，高度基于物理宽度(vw)极限拉伸 */
-            --card-w: clamp(110px, 18vh, 220px);
-            --card-h: clamp(130px, 48vw, 260px); /* 最大限度占满垂直空间 */
-            --font-sz: clamp(90px, 40vw, 220px);
-            --card-gap: clamp(12px, 3vh, 30px);
+            /* 宽度基于物理高度vh，高度基于物理宽度vw，完美适配 */
+            --card-w: clamp(80px, 20vh, 200px);
+            --card-h: clamp(110px, 35vw, 260px);
+            --font-sz: clamp(80px, 30vw, 220px);
+            --card-gap: clamp(10px, 3vh, 30px);
         }
-        
-        /* 强制横屏时极限压缩所有间距，为时钟和按钮腾位置，防止按钮被挤出屏幕外！ */
-        body.force-landscape .top-bar { padding-top: 5px !important; padding-bottom: 5px !important; }
-        body.force-landscape .date-display { margin-bottom: 8px !important; font-size: 14px; }
-        body.force-landscape .clock-container { margin-bottom: 12px !important; }
-        body.force-landscape .quote { margin-top: 8px !important; font-size: 14px; }
-        body.force-landscape .sub-tab-container { margin-bottom: 10px !important; }
+
+        /* 极限压缩间距：腾出屏幕空间，防止底部按钮被遮挡 */
+        @media (max-height: 450px) {
+            .top-bar { padding: 5px 20px !important; }
+            .bottom-bar-wrap { padding-bottom: 5px !important; }
+            .date-display { margin-bottom: 5px !important; font-size: 12px !important; }
+            .quote { margin-top: 5px !important; font-size: 12px !important; }
+            .clock-container { margin-bottom: 5px !important; }
+            .sub-tab-container { margin-bottom: 8px !important; }
+            .time-input-group { margin-bottom: 10px !important; }
+            .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
+            
+            :root {
+                --card-w: clamp(80px, 20vw, 200px);
+                --card-h: clamp(110px, 35vh, 260px);
+                --font-sz: clamp(80px, 30vh, 220px);
+                --card-gap: clamp(10px, 3vw, 30px);
+            }
+        }
+
+        body.force-landscape .top-bar { padding: 5px 20px !important; }
+        body.force-landscape .bottom-bar-wrap { padding-bottom: 5px !important; }
+        body.force-landscape .date-display { margin-bottom: 5px !important; font-size: 12px !important; }
+        body.force-landscape .quote { margin-top: 5px !important; font-size: 12px !important; }
+        body.force-landscape .clock-container { margin-bottom: 5px !important; }
+        body.force-landscape .sub-tab-container { margin-bottom: 8px !important; }
         body.force-landscape .time-input-group { margin-bottom: 10px !important; }
-        body.force-landscape .btn-apple { padding: 8px 25px !important; font-size: 14px !important; }
+        body.force-landscape .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
 
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
 
         body {
-            background-color: var(--bg-color);
-            color: var(--ui-text);
+            background-color: var(--bg-color); color: var(--ui-text);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
             width: 100vw; height: 100vh; overflow: hidden; 
             user-select: none; transition: background-color 0.4s ease;
@@ -75,33 +94,27 @@
 
         body.idle-cursor { cursor: none !important; }
 
-        /* ======= 包装器 ======= */
+        /* ======= 包装器 (负责旋转防溢出) ======= */
         #app-wrapper {
-            position: absolute; top: 50%; left: 50%;
-            width: 100%; height: 100%;
+            position: absolute; top: 50%; left: 50%; width: 100%; height: 100%;
             transform: translate(-50%, -50%); 
             display: flex; flex-direction: column; justify-content: space-between;
             transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
-            padding-top: env(safe-area-inset-top);
-            padding-bottom: env(safe-area-inset-bottom);
-            padding-left: env(safe-area-inset-left);
-            padding-right: env(safe-area-inset-right);
+            padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
         }
 
         body.force-landscape #app-wrapper {
             transform: translate(-50%, -50%) rotate(90deg); 
-            padding-top: env(safe-area-inset-left);
-            padding-right: env(safe-area-inset-top);
-            padding-bottom: env(safe-area-inset-right);
-            padding-left: env(safe-area-inset-bottom);
+            padding-top: env(safe-area-inset-left); padding-right: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-right); padding-left: env(safe-area-inset-bottom);
         }
 
         /* ======= 导航栏 ======= */
         .top-bar {
             display: flex; justify-content: space-between; align-items: center;
             padding: clamp(16px, 3vh, 32px) clamp(20px, 4vw, 60px); 
-            font-size: 14px; font-weight: 500; z-index: 100;
-            transition: opacity 0.8s ease, color 0.3s;
+            font-size: 14px; font-weight: 500; z-index: 100; transition: opacity 0.8s ease, color 0.3s;
         }
         
         .idle-hidden { opacity: 0 !important; pointer-events: none !important; }
@@ -117,13 +130,9 @@
         .nav-item { cursor: pointer; position: relative; padding-bottom: 6px; transition: color 0.3s; letter-spacing: 1px; -webkit-tap-highlight-color: transparent;}
         .nav-item:hover { color: var(--ui-text-active); }
         .nav-item.active { color: var(--ui-text-active); font-weight: 600; }
-        .nav-item.active::after {
-            content: ''; position: absolute; bottom: 0; left: 50%;
-            transform: translateX(-50%); width: 4px; height: 4px;
-            background-color: var(--ui-text-active); border-radius: 50%;
-        }
+        .nav-item.active::after { content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; background-color: var(--ui-text-active); border-radius: 50%; }
 
-        /* ======= 视图与排版 ======= */
+        /* ======= 视图容器 ======= */
         .view-container { display: none; flex-direction: column; align-items: center; justify-content: center; flex: 1; width: 100%; animation: fadeIn 0.4s ease-out; }
         .view-container.active { display: flex; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
@@ -132,18 +141,18 @@
         .quote { font-size: clamp(12px, 1.2vw, 18px); color: var(--ui-text); letter-spacing: 3px; cursor: text; outline: none; padding: 10px; transition: 0.3s; margin-top: clamp(20px, 6vh, 80px); }
         .quote:focus { color: var(--ui-text-active); border-bottom: 1px dashed var(--ui-text); }
         
-        .clock-container { display: flex; gap: var(--card-gap); justify-content: center; align-items: center; margin-bottom: clamp(15px, 4vh, 40px); }
+        /* 强制同行排列：杜绝 flex-wrap，防止横屏变成竖排堆叠 */
+        .clock-container { display: flex; flex-wrap: nowrap; gap: var(--card-gap); justify-content: center; align-items: center; margin-bottom: clamp(15px, 4vh, 40px); }
 
-        /* ======= 3D 翻页卡片 (三重硬件加速防切割) ======= */
+        /* ======= 3D 翻页卡片 (终极免 Mask 防割裂技术) ======= */
         .clock-group {
-            display: flex; width: var(--card-w); height: var(--card-h);
-            border-radius: clamp(12px, 2vw, 24px); background-color: var(--card-bg);
+            display: flex; width: var(--card-w); height: var(--card-h); flex-shrink: 0; /* 防止被挤压 */
+            background-color: var(--card-bg); position: relative; 
+            border-radius: var(--card-radius);
             box-shadow: 0 15px 40px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.02); position: relative; overflow: hidden; 
-            /* 强制开启 GPU 加速，彻底杜绝 iOS 渲染 Bug */
+            border: 1px solid rgba(255,255,255,0.02);
             transform: translate3d(0, 0, 0); 
-            -webkit-mask-image: -webkit-radial-gradient(white, black);
-            mask-image: radial-gradient(white, black);
+            /* 彻底舍弃 overflow: hidden 和 mask-image，杜绝 Safari 引擎崩溃 */
         }
 
         .clock-group::after {
@@ -159,16 +168,18 @@
             background: var(--card-bg); color: var(--text-color);
             font-family: 'Oswald', sans-serif; font-weight: 600; font-size: var(--font-sz);
             overflow: hidden; transform-style: preserve-3d; 
-            /* 防闪烁强化 */
-            -webkit-backface-visibility: hidden;
-            backface-visibility: hidden;
-            will-change: transform;
-            font-variant-numeric: tabular-nums; 
+            -webkit-backface-visibility: hidden; backface-visibility: hidden;
+            will-change: transform; font-variant-numeric: tabular-nums; 
         }
 
+        /* 智能精准圆角匹配，代替父级 overflow 裁切 */
+        .flip-digit:first-child .half.top { border-top-left-radius: var(--card-radius); }
+        .flip-digit:first-child .half.bottom { border-bottom-left-radius: var(--card-radius); }
+        .flip-digit:last-child .half.top { border-top-right-radius: var(--card-radius); }
+        .flip-digit:last-child .half.bottom { border-bottom-right-radius: var(--card-radius); }
+
         .half span {
-            position: absolute; left: 0; width: 100%; height: 200%;
-            display: flex; justify-content: center; align-items: center; 
+            position: absolute; left: 0; width: 100%; height: 200%; display: flex; justify-content: center; align-items: center; 
             letter-spacing: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); white-space: nowrap; 
         }
         .half.top { top: 0; transform-origin: bottom; }
@@ -197,8 +208,7 @@
             background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--btn-border); 
             padding: clamp(10px, 1.5vh, 12px) clamp(20px, 3vw, 35px); 
             font-size: clamp(14px, 1.5vh, 16px); border-radius: 30px; cursor: pointer; 
-            transition: all 0.3s; font-weight: 500; backdrop-filter: blur(5px);
-            -webkit-tap-highlight-color: transparent;
+            transition: all 0.3s; font-weight: 500; backdrop-filter: blur(5px); -webkit-tap-highlight-color: transparent;
         }
         .btn-apple:hover { background-color: var(--btn-hover); transform: translateY(-2px); }
         .btn-apple:active { transform: scale(0.96); }
@@ -217,7 +227,7 @@
         .time-input:focus { border-color: var(--ui-text-active); }
         .time-label { color: var(--ui-text); font-size: 14px; font-weight: 500; }
 
-        /* ======= 模态框及主题卡片 ======= */
+        /* 模态框及固化卡片 */
         .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; justify-content:center; align-items:center; z-index:1000; opacity:0; transition:0.3s; }
         .modal-overlay.active { display:flex; opacity:1; }
         .modal-content { background: var(--modal-content-bg); width:85%; max-width:500px; padding:30px; border-radius:24px; border:1px solid rgba(128,128,128,0.2); position:relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); transition: background-color 0.4s; }
@@ -283,7 +293,7 @@
             </div>
         </div>
 
-        <div class="top-bar" style="margin-top: auto;">
+        <div class="top-bar bottom-bar-wrap" style="margin-top: auto; padding-bottom: clamp(10px, 3vh, 30px);">
             <div style="display: flex; gap: 10px;">
                 <div class="icon-btn" id="fullscreen-btn" title="全屏沉浸模式">
                     <svg viewBox="0 0 24 24"><path d="M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z"/></svg>
@@ -308,7 +318,9 @@
                 </div>
             </div>
         </div>
-    </div> <script>
+    </div> 
+
+    <script>
         /* ================= 1. 结构生成 ================= */
         function createCardGroup(prefix) {
             return `
@@ -384,8 +396,7 @@
                 const nums = dateStr.match(/\d+/g);
                 const isLeap = dateStr.includes('闰');
                 if (nums && nums.length >= 2) {
-                    const lm = parseInt(nums[0]);
-                    const ld = parseInt(nums[1]);
+                    const lm = parseInt(nums[0]); const ld = parseInt(nums[1]);
                     const monthMap = ['','正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','冬月','腊月'];
                     const dayMap = ['','初一','初二','初三','初四','初五','初六','初七','初八','初九','初十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十'];
                     lunarStr = (isLeap ? '闰' : '') + (monthMap[lm] || lm + '月') + (dayMap[ld] || ld);
@@ -415,7 +426,6 @@
         if(localStorage.getItem('savedQuote')) quoteEl.textContent = localStorage.getItem('savedQuote');
         quoteEl.addEventListener('input', function() { localStorage.setItem('savedQuote', this.textContent); });
 
-        // 番茄钟
         let pTime = 25 * 60, pTimer = null, isPRun = false;
         function updatePomo() { setTimePair('p-m', Math.floor(pTime / 60)); setTimePair('p-s', pTime % 60); }
         updatePomo();
@@ -439,7 +449,6 @@
             btn.textContent = "开始专注"; btn.style.backgroundColor = ''; btn.style.color = ''; btn.style.borderColor = '';
         }
 
-        // 计时器
         let timerMode = 'up';
         let tTime = 0, tTimer = null, isTRun = false, targetCdTime = 0;
         
@@ -492,7 +501,6 @@
             btn.textContent = "开始"; btn.style.backgroundColor = ''; btn.style.color = ''; btn.style.borderColor = '';
         }
 
-        // 主题控制
         function applyTheme(bg, card, text, isLightMode) {
             document.documentElement.style.setProperty('--bg-color', bg);
             document.documentElement.style.setProperty('--card-bg', card);
@@ -560,7 +568,7 @@
         document.addEventListener('fullscreenchange', checkFullscreenState);
         document.addEventListener('webkitfullscreenchange', checkFullscreenState);
 
-        // ★ 核心修复：精准计算强制横屏容器大小 ★
+        // ★ 精准计算强制横屏容器大小 ★
         const rotateBtn = document.getElementById('rotate-btn');
         function updateLandscapeDimensions() {
             const wrapper = document.getElementById('app-wrapper');
