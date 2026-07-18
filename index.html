@@ -88,7 +88,11 @@
         body {
             background-color: var(--bg-color); color: var(--ui-text);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-            width: 100vw; height: 100vh; overflow: hidden; 
+            width: 100vw; overflow: hidden;
+            /* iOS Safari 地址栏收起/展开时 100vh 与真实可视高度不同步，
+               会被 #app-wrapper 的 translate(-50%,-50%) 放大成整体上移错位，
+               这里用 dvh 做渐进增强，并用 JS 校正的 --vh100 兜底（微信 WKWebView 等旧内核可能不支持 dvh） */
+            height: 100vh; height: 100dvh; height: var(--vh100, 100dvh);
             user-select: none; transition: background-color 0.4s ease;
         }
 
@@ -528,6 +532,16 @@
         let idleTimer;
         let isImmersiveMode = false;
 
+        // 修正 iOS Safari 的 100vh 漂移：用 visualViewport/innerHeight 校正出真实高度写入 --vh100
+        function syncViewportHeightVar() {
+            const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+            document.documentElement.style.setProperty('--vh100', h + 'px');
+        }
+        window.addEventListener('resize', syncViewportHeightVar);
+        window.addEventListener('orientationchange', syncViewportHeightVar);
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', syncViewportHeightVar);
+        syncViewportHeightVar();
+
         function resetIdleTimer() {
             clearTimeout(idleTimer);
             topBars.forEach(bar => bar.classList.remove('idle-hidden'));
@@ -545,25 +559,38 @@
         });
 
         // 绑定全屏沉浸
+        // iPhone Safari 和微信内置浏览器（WKWebView）都不支持对普通元素调用原生 Fullscreen API，
+        // 调用会静默失败或直接抛错，因此"沉浸模式"状态不能再依赖 document.fullscreenElement 是否为真，
+        // 而是用 isImmersiveMode 自己驱动；原生全屏能成功就顺带用（安卓/桌面/iPad），不能成功也不影响沉浸态生效。
+        function setImmersive(on) {
+            isImmersiveMode = on;
+            resetIdleTimer();
+        }
+
         document.getElementById('fullscreen-btn').addEventListener('click', () => {
             const docEl = document.documentElement;
-            const isFull = document.fullscreenElement || document.webkitFullscreenElement;
-            if (!isFull) {
-                if (docEl.requestFullscreen) docEl.requestFullscreen();
-                else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
-                isImmersiveMode = true; 
+            const nativeIsFull = document.fullscreenElement || document.webkitFullscreenElement;
+
+            if (!isImmersiveMode) {
+                try {
+                    const req = docEl.requestFullscreen ? docEl.requestFullscreen()
+                        : docEl.webkitRequestFullscreen ? docEl.webkitRequestFullscreen()
+                        : null;
+                    if (req && req.catch) req.catch(() => {});
+                } catch (e) { /* iPhone Safari / 微信 WKWebView 会直接抛错，忽略即可 */ }
+                setImmersive(true);
             } else {
-                if (document.exitFullscreen) document.exitFullscreen();
-                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-                isImmersiveMode = false; 
+                if (nativeIsFull) {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                }
+                setImmersive(false);
             }
-            if (!docEl.requestFullscreen && !docEl.webkitRequestFullscreen) isImmersiveMode = !isImmersiveMode;
-            resetIdleTimer();
         });
 
         function checkFullscreenState() {
             const isFull = document.fullscreenElement || document.webkitFullscreenElement;
-            if (!isFull && isImmersiveMode) { isImmersiveMode = false; resetIdleTimer(); }
+            if (!isFull && isImmersiveMode) setImmersive(false);
         }
         document.addEventListener('fullscreenchange', checkFullscreenState);
         document.addEventListener('webkitfullscreenchange', checkFullscreenState);
