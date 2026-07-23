@@ -48,11 +48,12 @@
 
         /* ★ 核心魔法：横屏状态下的专属极限空间优化（适用物理横屏及强制横屏） ★ */
         body.force-landscape {
-            /* 宽度基于物理高度vh，高度基于物理宽度vw，完美适配 */
+            /* 卡片宽度基于物理高度vh；高度和字号直接由宽度换算得出（而不是各自独立取vw/vh），
+               否则宽高会分别对应两个互不相关的物理轴，比例失衡：字号配合宽度撑满时，
+               高度却撑不满字号所需的空间，数字上下就会被卡片裁掉，变成"刀切"的样子 */
             --card-w: clamp(80px, 20vh, 200px);
-            --card-h: clamp(110px, 35vw, 260px);
-            /* 字号必须和卡片宽度用同一根轴(vh)算，否则数字会比格子窄，中间露出大缝 */
-            --font-sz: clamp(70px, 20vh, 190px);
+            --card-h: calc(var(--card-w) * 1.35);
+            --font-sz: calc(var(--card-w) * 0.92);
             --card-gap: clamp(10px, 3vh, 30px);
         }
 
@@ -68,10 +69,10 @@
             .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
             
             :root {
+                /* 同上：高度和字号由宽度换算得出，避免两轴独立换算导致比例失衡 */
                 --card-w: clamp(80px, 20vw, 200px);
-                --card-h: clamp(110px, 35vh, 260px);
-                /* 同上：字号要跟卡片宽度同轴(vw)，避免数字缩水留出大缝 */
-                --font-sz: clamp(70px, 20vw, 190px);
+                --card-h: calc(var(--card-w) * 1.35);
+                --font-sz: calc(var(--card-w) * 0.92);
                 --card-gap: clamp(10px, 3vw, 30px);
             }
         }
