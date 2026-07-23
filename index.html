@@ -51,7 +51,8 @@
             /* 宽度基于物理高度vh，高度基于物理宽度vw，完美适配 */
             --card-w: clamp(80px, 20vh, 200px);
             --card-h: clamp(110px, 35vw, 260px);
-            --font-sz: clamp(80px, 30vw, 220px);
+            /* 字号必须和卡片宽度用同一根轴(vh)算，否则数字会比格子窄，中间露出大缝 */
+            --font-sz: clamp(70px, 20vh, 190px);
             --card-gap: clamp(10px, 3vh, 30px);
         }
 
@@ -69,7 +70,8 @@
             :root {
                 --card-w: clamp(80px, 20vw, 200px);
                 --card-h: clamp(110px, 35vh, 260px);
-                --font-sz: clamp(80px, 30vh, 220px);
+                /* 同上：字号要跟卡片宽度同轴(vw)，避免数字缩水留出大缝 */
+                --font-sz: clamp(70px, 20vw, 190px);
                 --card-gap: clamp(10px, 3vw, 30px);
             }
         }
