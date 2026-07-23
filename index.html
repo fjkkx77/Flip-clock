@@ -48,40 +48,44 @@
 
         /* ★ 核心魔法：横屏状态下的专属极限空间优化（适用物理横屏及强制横屏） ★ */
         body.force-landscape {
-            /* 卡片宽度基于物理高度vh；高度和字号直接由宽度换算得出（而不是各自独立取vw/vh），
-               否则宽高会分别对应两个互不相关的物理轴，比例失衡：字号配合宽度撑满时，
-               高度却撑不满字号所需的空间，数字上下就会被卡片裁掉，变成"刀切"的样子 */
-            --card-w: clamp(80px, 20vh, 200px);
-            --card-h: calc(var(--card-w) * 1.35);
+            /* 卡片高度才是被真正“挤压”的一边：强制横屏时整屏内容(导航栏+日期行+卡片+签名行+按钮栏)
+               全部要塞进手机的物理宽度(vw)里，这是任何设备上都成立的硬约束。所以让卡片高度
+               直接=100vw减去其余元素的预估总高度，谁的屏幕越宽卡片就自动越大，越窄就自动收缩，
+               不用针对某一台设备的截图去调死像素。宽度、字号再按固定比例从高度反推，保证不失衡。
+               190px 是导航栏/按钮栏(各44px图标+内边距)、日期行、签名行几项预估高度之和。 */
+            --card-h: clamp(90px, calc(100vw - 190px), 220px);
+            --card-w: calc(var(--card-h) / 1.35);
             --font-sz: calc(var(--card-w) * 0.92);
             --card-gap: clamp(10px, 3vh, 30px);
         }
 
         /* 极限压缩间距：腾出屏幕空间，防止底部按钮被遮挡 */
         @media (max-height: 450px) {
-            .top-bar { padding: 3px 20px !important; }
-            .bottom-bar-wrap { padding-bottom: 3px !important; }
-            .date-display { margin-bottom: 7px !important; font-size: 14px !important; }
-            .quote { margin-top: 7px !important; font-size: 14px !important; }
-            .clock-container { margin-bottom: 3px !important; }
+            /* 真实物理横屏时，被挤压的是屏幕高度(vh)，所以这里的留白改用vh换算，
+               道理和下面 force-landscape 分支一致，只是换了受限的那根轴 */
+            .top-bar { padding: clamp(4px, 1.2vh, 10px) 20px !important; }
+            .bottom-bar-wrap { padding-bottom: clamp(4px, 1.2vh, 10px) !important; }
+            .date-display { margin-bottom: clamp(5px, 2vh, 10px) !important; font-size: clamp(12px, 3.2vh, 15px) !important; }
+            .quote { margin-top: clamp(5px, 2vh, 10px) !important; font-size: clamp(12px, 3.2vh, 15px) !important; }
+            .clock-container { margin-bottom: clamp(3px, 1vh, 6px) !important; }
             .sub-tab-container { margin-bottom: 8px !important; }
             .time-input-group { margin-bottom: 10px !important; }
             .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
-            
+
             :root {
-                /* 同上：高度和字号由宽度换算得出，避免两轴独立换算导致比例失衡 */
-                --card-w: clamp(80px, 20vw, 200px);
-                --card-h: calc(var(--card-w) * 1.35);
+                /* 同上：卡片高度=100vh减去其余元素的预估总高度，随设备自适应 */
+                --card-h: clamp(90px, calc(100vh - 190px), 220px);
+                --card-w: calc(var(--card-h) / 1.35);
                 --font-sz: calc(var(--card-w) * 0.92);
                 --card-gap: clamp(10px, 3vw, 30px);
             }
         }
 
-        body.force-landscape .top-bar { padding: 3px 20px !important; }
-        body.force-landscape .bottom-bar-wrap { padding-bottom: 3px !important; }
-        body.force-landscape .date-display { margin-bottom: 7px !important; font-size: 14px !important; }
-        body.force-landscape .quote { margin-top: 7px !important; font-size: 14px !important; }
-        body.force-landscape .clock-container { margin-bottom: 3px !important; }
+        body.force-landscape .top-bar { padding: clamp(4px, 1.2vw, 10px) 20px !important; }
+        body.force-landscape .bottom-bar-wrap { padding-bottom: clamp(4px, 1.2vw, 10px) !important; }
+        body.force-landscape .date-display { margin-bottom: clamp(5px, 2vw, 10px) !important; font-size: clamp(12px, 3.2vw, 15px) !important; }
+        body.force-landscape .quote { margin-top: clamp(5px, 2vw, 10px) !important; font-size: clamp(12px, 3.2vw, 15px) !important; }
+        body.force-landscape .clock-container { margin-bottom: clamp(3px, 1vw, 6px) !important; }
         body.force-landscape .sub-tab-container { margin-bottom: 8px !important; }
         body.force-landscape .time-input-group { margin-bottom: 10px !important; }
         body.force-landscape .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
