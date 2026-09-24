@@ -715,7 +715,9 @@
         function toggleDebug() {
             if (debugEl) { debugEl.remove(); debugEl = null; return; }
             debugEl = document.createElement('pre');
-            debugEl.style.cssText = 'position:fixed;left:8px;right:8px;top:30%;z-index:9999;margin:0;padding:8px;font:12px/1.5 monospace;white-space:pre-wrap;word-break:break-all;color:#0f0;background:rgba(0,0,0,.85);pointer-events:none';
+            debugEl.style.cssText = 'position:fixed;left:8px;right:8px;top:30%;z-index:9999;margin:0;padding:8px;font:12px/1.5 monospace;white-space:pre-wrap;word-break:break-all;color:#0f0;background:rgba(0,0,0,.85);cursor:pointer';
+            // 点面板本身就关掉；主屏幕模式切回来不会重新加载，不给个直观的关法它会一直挂着
+            debugEl.addEventListener('click', e => { e.stopPropagation(); toggleDebug(); });
             document.body.appendChild(debugEl);
             fitLayout();
         }
@@ -726,6 +728,7 @@
             const vv = window.visualViewport;
             const b = document.querySelector('.view-container.active .clock-container').getBoundingClientRect();
             debugEl.textContent = [
+                `【诊断面板 · 点一下这里关闭】`,
                 `inner ${innerWidth}×${innerHeight}  outer ${outerWidth}×${outerHeight}`,
                 `screen ${screen.width}×${screen.height}  avail ${screen.availWidth}×${screen.availHeight}`,
                 `vv ${vv ? Math.round(vv.width) + '×' + Math.round(vv.height) + ' offTop ' + vv.offsetTop + ' pageTop ' + vv.pageTop : '无'}`,
