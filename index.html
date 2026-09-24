@@ -714,17 +714,44 @@
             const fitW = (W - 2 * (16 + shiftX)) / (n * cardW + (n - 1) * gap);
             const fit = Math.max(0.3, Math.min(1, fitH, fitW));
             view.style.setProperty('--fit', fit.toFixed(4));
-            if (debugEl) debugEl.textContent =
-                `inner ${innerWidth}×${innerHeight} | screen ${screen.width}×${screen.height} | standalone ${!!navigator.standalone}\n` +
-                `wrapper ${W}×${H} | reserve ${reserve} | side ${side} | shift ${shift} | fit ${fit.toFixed(3)}`;
+            if (debugEl) renderDebug({ W, H, reserve, side, shift, fit });
         }
 
-        // 在地址后面加 ?debug 打开：真机上一张截图就能看到所有实测值
-        const debugEl = /[?&]debug\b/.test(location.search) ? document.createElement('pre') : null;
-        if (debugEl) {
-            debugEl.style.cssText = 'position:fixed;left:8px;right:8px;top:50%;z-index:9999;margin:0;padding:8px;font:12px/1.5 monospace;white-space:pre-wrap;color:#0f0;background:rgba(0,0,0,.75);pointer-events:none';
+        // 诊断面板：地址加 ?debug，或连点日期 5 下（主屏幕模式没有地址栏）。真机一张截图就能看到所有实测值
+        let debugEl = null;
+        function toggleDebug() {
+            if (debugEl) { debugEl.remove(); debugEl = null; return; }
+            debugEl = document.createElement('pre');
+            debugEl.style.cssText = 'position:fixed;left:8px;right:8px;top:30%;z-index:9999;margin:0;padding:8px;font:12px/1.5 monospace;white-space:pre-wrap;word-break:break-all;color:#0f0;background:rgba(0,0,0,.85);pointer-events:none';
             document.body.appendChild(debugEl);
+            fitLayout();
         }
+        function renderDebug(s) {
+            const probe = h => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;height:' + h; document.body.appendChild(d); const v = d.getBoundingClientRect().height; d.remove(); return Math.round(v); };
+            const inset = side => probe('env(safe-area-inset-' + side + ')');
+            const mm = q => matchMedia(q).matches ? 1 : 0;
+            const vv = window.visualViewport;
+            const b = document.querySelector('.view-container.active .clock-container').getBoundingClientRect();
+            debugEl.textContent = [
+                `inner ${innerWidth}×${innerHeight}  outer ${outerWidth}×${outerHeight}`,
+                `screen ${screen.width}×${screen.height}  avail ${screen.availWidth}×${screen.availHeight}`,
+                `vv ${vv ? Math.round(vv.width) + '×' + Math.round(vv.height) + ' offTop ' + vv.offsetTop + ' pageTop ' + vv.pageTop : '无'}`,
+                `docEl ${document.documentElement.clientWidth}×${document.documentElement.clientHeight}`,
+                `vh ${probe('100vh')} svh ${probe('100svh')} lvh ${probe('100lvh')} dvh ${probe('100dvh')}`,
+                `inset 上${inset('top')} 右${inset('right')} 下${inset('bottom')} 左${inset('left')}`,
+                `standalone ${navigator.standalone}  dm-standalone ${mm('(display-mode: standalone)')} fullscreen ${mm('(display-mode: fullscreen)')} browser ${mm('(display-mode: browser)')}`,
+                `wrapper ${s.W}×${s.H}  reserve ${s.reserve}  side ${s.side}  shift ${s.shift}  fit ${s.fit.toFixed(3)}`,
+                `卡片中心 x${Math.round((b.left + b.right) / 2)} y${Math.round((b.top + b.bottom) / 2)}`,
+                navigator.userAgent
+            ].join('\n');
+        }
+        if (/[?&]debug\b/.test(location.search)) toggleDebug();
+        let dateTaps = [];
+        document.getElementById('date-display').addEventListener('click', () => {
+            const now = Date.now();
+            dateTaps = dateTaps.filter(t => now - t < 2000).concat(now);
+            if (dateTaps.length >= 5) { dateTaps = []; toggleDebug(); }
+        });
 
         let fitQueued = false;
         function queueFit() {
