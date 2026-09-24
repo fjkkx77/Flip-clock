@@ -717,7 +717,7 @@
             if (debugEl) renderDebug({ W, H, reserve, side, shift, fit });
         }
 
-        // 诊断面板：地址加 ?debug，或连点日期 5 下（主屏幕模式没有地址栏）。真机一张截图就能看到所有实测值
+        // 诊断面板：地址加 ?debug，或连点数字卡片 5 下（主屏幕模式没有地址栏）。真机一张截图就能看到所有实测值
         let debugEl = null;
         function toggleDebug() {
             if (debugEl) { debugEl.remove(); debugEl = null; return; }
@@ -747,11 +747,12 @@
         }
         if (/[?&]debug\b/.test(location.search)) toggleDebug();
         let dateTaps = [];
-        document.getElementById('date-display').addEventListener('click', () => {
+        // 触发点用数字卡片：面积大、本身没有点击功能；日期那一行太细，旁边的签名一点就进入编辑
+        document.querySelectorAll('.clock-container').forEach(el => el.addEventListener('click', () => {
             const now = Date.now();
             dateTaps = dateTaps.filter(t => now - t < 2000).concat(now);
             if (dateTaps.length >= 5) { dateTaps = []; toggleDebug(); }
-        });
+        }));
 
         let fitQueued = false;
         function queueFit() {
