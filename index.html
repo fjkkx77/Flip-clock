@@ -52,7 +52,8 @@
                全部要塞进手机的物理宽度(vw)里，这是任何设备上都成立的硬约束。所以让卡片高度
                直接=100vw减去其余元素的预估总高度，谁的屏幕越宽卡片就自动越大，越窄就自动收缩，
                不用针对某一台设备的截图去调死像素。宽度、字号再按固定比例从高度反推，保证不失衡。
-               190px 是导航栏/按钮栏(各44px图标+内边距)、日期行、签名行几项预估高度之和。 */
+               190px 是导航栏/按钮栏(各44px图标+内边距)、日期行、签名行几项预估高度之和。
+               这只是"期望尺寸"；实际能放多大由 JS 的 fitLayout 按实测剩余空间算 --fit 再兜一层底。 */
             --card-h: clamp(90px, calc(100vw - 190px), 220px);
             --card-w: calc(var(--card-h) / 1.35);
             --font-sz: calc(var(--card-w) * 0.92);
@@ -67,7 +68,7 @@
             .bottom-bar-wrap { padding-bottom: clamp(4px, 1.2vh, 10px) !important; }
             .date-display { margin-bottom: clamp(5px, 2vh, 10px) !important; font-size: clamp(12px, 3.2vh, 15px) !important; }
             .quote { margin-top: clamp(5px, 2vh, 10px) !important; font-size: clamp(12px, 3.2vh, 15px) !important; }
-            .clock-container { margin-bottom: clamp(3px, 1vh, 6px) !important; }
+            .v-below { padding-top: clamp(3px, 1vh, 6px) !important; }
             .sub-tab-container { margin-bottom: 8px !important; }
             .time-input-group { margin-bottom: 10px !important; }
             .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
@@ -85,7 +86,7 @@
         body.force-landscape .bottom-bar-wrap { padding-bottom: clamp(4px, 1.2vw, 10px) !important; }
         body.force-landscape .date-display { margin-bottom: clamp(5px, 2vw, 10px) !important; font-size: clamp(12px, 3.2vw, 15px) !important; }
         body.force-landscape .quote { margin-top: clamp(5px, 2vw, 10px) !important; font-size: clamp(12px, 3.2vw, 15px) !important; }
-        body.force-landscape .clock-container { margin-bottom: clamp(3px, 1vw, 6px) !important; }
+        body.force-landscape .v-below { padding-top: clamp(3px, 1vw, 6px) !important; }
         body.force-landscape .sub-tab-container { margin-bottom: 8px !important; }
         body.force-landscape .time-input-group { margin-bottom: 10px !important; }
         body.force-landscape .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
@@ -115,10 +116,12 @@
             padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
         }
 
+        /* 顺时针转 90° 后：包装器的 上→屏幕右、右→屏幕下、下→屏幕左、左→屏幕上，
+           安全区要按这个对应关系取（之前上下两条写反了：灵动岛那侧只留了底部的 34px） */
         body.force-landscape #app-wrapper {
-            transform: translate(-50%, -50%) rotate(90deg); 
-            padding-top: env(safe-area-inset-left); padding-right: env(safe-area-inset-top);
-            padding-bottom: env(safe-area-inset-right); padding-left: env(safe-area-inset-bottom);
+            transform: translate(-50%, -50%) rotate(90deg);
+            padding-top: env(safe-area-inset-right); padding-right: env(safe-area-inset-bottom);
+            padding-bottom: env(safe-area-inset-left); padding-left: env(safe-area-inset-top);
         }
 
         /* ======= 导航栏 ======= */
@@ -132,8 +135,11 @@
 
         .icon-btn { cursor: pointer; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; transition: 0.3s; -webkit-tap-highlight-color: transparent;}
         .icon-btn svg { fill: var(--ui-text); width: 22px; height: 22px; transition: 0.3s; }
-        .icon-btn:hover { background: var(--btn-bg); }
-        .icon-btn:hover svg { fill: var(--ui-text-active); }
+        /* hover 只给有鼠标的设备：触屏上点过之后 hover 会一直粘着，按钮背后留一个灰圆 */
+        @media (hover: hover) {
+            .icon-btn:hover { background: var(--btn-bg); }
+            .icon-btn:hover svg { fill: var(--ui-text-active); }
+        }
 
         .spacer { width: 44px; height: 44px; pointer-events: none; }
 
@@ -144,8 +150,23 @@
         .nav-item.active::after { content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; background-color: var(--ui-text-active); border-radius: 50%; }
 
         /* ======= 视图容器 ======= */
-        .view-container { display: none; flex-direction: column; align-items: center; justify-content: center; flex: 1; width: 100%; animation: fadeIn 0.4s ease-out; }
-        .view-container.active { display: flex; }
+        /* 主体绝对居中：视图铺满整个包装器（不受上下栏高度差和安全区左右不等的影响），
+           三行网格 = 上方附属(日期/子标签) | 卡片 | 下方附属(签名/按钮)，
+           上下两行强制等高(minmax(0,1fr))，卡片就永远落在正中；上下留出同样的 --reserve 给导航栏/按钮栏。
+           translate 用独立属性，是为了和 fadeIn 动画里的 transform 互不覆盖。 */
+        .view-container {
+            display: none; position: absolute; inset: 0;
+            grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); justify-items: center;
+            padding: var(--reserve, 0px) 0;
+            translate: var(--cx, 0px) var(--cy, 0px);
+            animation: fadeIn 0.4s ease-out;
+        }
+        .view-container.active { display: grid; }
+        .v-above, .v-below { display: flex; flex-direction: column; align-items: center; }
+        .v-above { align-self: end; }
+        .v-below { align-self: start; padding-top: clamp(15px, 4vh, 40px); }
+        #card-probe { position: absolute; visibility: hidden; pointer-events: none; width: var(--card-w); height: var(--card-h); }
+        #gap-probe { position: absolute; visibility: hidden; pointer-events: none; width: var(--card-gap); height: 0; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
         .date-display { font-size: clamp(14px, 1.5vw, 22px); color: var(--ui-text); margin-bottom: clamp(15px, 4vh, 60px); letter-spacing: 2px; font-weight: 500; }
@@ -153,11 +174,12 @@
         .quote:focus { color: var(--ui-text-active); border-bottom: 1px dashed var(--ui-text); }
         
         /* 强制同行排列：杜绝 flex-wrap，防止横屏变成竖排堆叠 */
-        .clock-container { display: flex; flex-wrap: nowrap; gap: var(--card-gap); justify-content: center; align-items: center; margin-bottom: clamp(15px, 4vh, 40px); }
+        /* --fit 由 JS 按实测剩余空间算出(≤1)：放不下时卡片/字号/间距整体等比缩小，而不是去挤上下的文字和按钮 */
+        .clock-container { display: flex; flex-wrap: nowrap; gap: calc(var(--card-gap) * var(--fit, 1)); justify-content: center; align-items: center; }
 
         /* ======= 3D 翻页卡片 (终极免 Mask 防割裂技术) ======= */
         .clock-group {
-            display: flex; width: var(--card-w); height: var(--card-h); flex-shrink: 0; /* 防止被挤压 */
+            display: flex; width: calc(var(--card-w) * var(--fit, 1)); height: calc(var(--card-h) * var(--fit, 1)); flex-shrink: 0; /* 防止被挤压 */
             background-color: var(--card-bg); position: relative; 
             border-radius: var(--card-radius);
             box-shadow: 0 15px 40px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.05);
@@ -177,7 +199,7 @@
         .half {
             position: absolute; left: 0; width: 100%; height: 50%;
             background: var(--card-bg); color: var(--text-color);
-            font-family: 'Oswald', sans-serif; font-weight: 600; font-size: var(--font-sz);
+            font-family: 'Oswald', sans-serif; font-weight: 600; font-size: calc(var(--font-sz) * var(--fit, 1));
             overflow: hidden; transform-style: preserve-3d; 
             -webkit-backface-visibility: hidden; backface-visibility: hidden;
             will-change: transform; font-variant-numeric: tabular-nums; 
@@ -267,22 +289,33 @@
             <div class="spacer"></div> 
         </div>
 
+        <div id="card-probe"></div><div id="gap-probe"></div>
+
         <div class="view-container active" id="view-clock">
-            <div class="date-display" id="date-display">日期加载中...</div>
+            <div class="v-above">
+                <div class="date-display" id="date-display">日期加载中...</div>
+            </div>
             <div class="clock-container" id="clock-dom"></div>
-            <div class="quote" id="quote-text" contenteditable="true" spellcheck="false" title="点击编辑">心态代表风水</div>
+            <div class="v-below">
+                <div class="quote" id="quote-text" contenteditable="true" spellcheck="false" title="点击编辑">心态代表风水</div>
+            </div>
         </div>
 
         <div class="view-container" id="view-pomodoro">
-            <div class="date-display" style="color: transparent; user-select: none;">占位</div>
+            <div class="v-above">
+                <div class="date-display" style="color: transparent; user-select: none;">占位</div>
+            </div>
             <div class="clock-container" id="pomo-dom"></div>
-            <div class="btn-group">
-                <button class="btn-apple" id="pomodoro-btn" onclick="togglePomodoro()">开始专注</button>
-                <button class="btn-apple" onclick="resetPomodoro()">重置</button>
+            <div class="v-below">
+                <div class="btn-group">
+                    <button class="btn-apple" id="pomodoro-btn" onclick="togglePomodoro()">开始专注</button>
+                    <button class="btn-apple" onclick="resetPomodoro()">重置</button>
+                </div>
             </div>
         </div>
 
         <div class="view-container" id="view-timer">
+            <div class="v-above">
             <div class="sub-tab-container">
                 <div class="sub-tab active" onclick="setTimerMode('up', this)">正计时</div>
                 <div class="sub-tab" onclick="setTimerMode('down', this)">倒计时</div>
@@ -294,13 +327,16 @@
                 <input type="number" id="cd-s" class="time-input" min="0" max="59" value="0"> <span class="time-label">秒</span>
                 <button class="btn-apple" style="padding: 6px 15px; margin-left: 5px;" onclick="applyCountdown()">设定</button>
             </div>
+            </div>
 
             <div class="clock-container" id="timer-dom"></div>
-            
-            <div class="btn-group">
-                <button class="btn-apple" id="timer-btn" onclick="toggleTimer()">开始</button>
-                <button class="btn-apple" onclick="resetTimer()">重置</button>
-                <button class="btn-apple" id="timer-clear-btn" style="display: none;" onclick="clearTimer()">清除</button>
+
+            <div class="v-below">
+                <div class="btn-group">
+                    <button class="btn-apple" id="timer-btn" onclick="toggleTimer()">开始</button>
+                    <button class="btn-apple" onclick="resetTimer()">重置</button>
+                    <button class="btn-apple" id="timer-clear-btn" style="display: none;" onclick="clearTimer()">清除</button>
+                </div>
             </div>
         </div>
 
@@ -632,6 +668,80 @@
         }
         window.addEventListener('resize', autoHideRotateBtn);
         autoHideRotateBtn(); // 初始化检测
+
+        /* ================= 6. 主体居中 + 按实测空间等比缩放 ================= */
+        // iOS 26 的 WebKit 回归（WebKit Bug 301108）：从主屏幕打开、且状态栏样式是 black-translucent 时，
+        // 页面从屏幕最顶端(y=0)开始画，但上报的视口高度却减掉了顶部安全区——
+        // 例如 iPhone 16 Pro 屏幕 874 高，innerHeight 只有 812，下面 62px 页面够不着。
+        // 于是"视口的中心"比"屏幕的中心"高出一截。这里算出这段差值的一半，把主体挪回物理屏幕正中；
+        // 按钮栏仍然留在页面够得着的范围里。不是这种情况时差值为 0，什么都不做。
+        function physicalCenterShift() {
+            if (!window.navigator.standalone) return 0;          // 只有 iOS 主屏幕模式才有这个 bug
+            if (window.innerWidth > window.innerHeight) return 0; // 手机真横过来时状态栏会隐藏，情况不同，不动
+            const gap = Math.max(screen.width, screen.height) - window.innerHeight;
+            return (gap > 0 && gap < 120) ? gap / 2 : 0;          // 超出合理范围说明不是这个 bug，宁可不动
+        }
+
+        const appWrapper = document.getElementById('app-wrapper');
+        const cardProbe = document.getElementById('card-probe');
+        const gapProbe = document.getElementById('gap-probe');
+        const topBarEl = document.querySelector('.top-bar:not(.bottom-bar-wrap)');
+        const bottomBarEl = document.querySelector('.bottom-bar-wrap');
+
+        function fitLayout() {
+            const cs = getComputedStyle(appWrapper);
+            // 上下各留同样的高度 = 两条栏里较高的那一条（含安全区），这样上下对称，卡片正好居中
+            const reserve = Math.max(parseFloat(cs.paddingTop) + topBarEl.offsetHeight,
+                                     parseFloat(cs.paddingBottom) + bottomBarEl.offsetHeight);
+            appWrapper.style.setProperty('--reserve', reserve + 'px');
+
+            // 旋转后"屏幕往下" = 包装器的 +x 方向；没旋转时就是 +y
+            const shift = physicalCenterShift();
+            const rotated = document.body.classList.contains('force-landscape');
+            appWrapper.style.setProperty('--cx', (rotated ? shift : 0) + 'px');
+            appWrapper.style.setProperty('--cy', (rotated ? 0 : shift) + 'px');
+
+            const view = document.querySelector('.view-container.active');
+            if (!view) return;
+            const W = appWrapper.clientWidth, H = appWrapper.clientHeight; // 布局尺寸，不受 rotate 影响
+            const cardW = cardProbe.offsetWidth, cardH = cardProbe.offsetHeight, gap = gapProbe.offsetWidth;
+            const n = view.querySelectorAll('.clock-group').length;
+            // 上下附属内容取较高的一侧，两边都按它留，才能保证卡片居中时两边都不会压到东西
+            const side = Math.max(view.querySelector('.v-above').offsetHeight, view.querySelector('.v-below').offsetHeight);
+            // 主体被挪了 shift，朝挪动方向那一侧就少了 shift 的空间；两侧对称地按这个少的算
+            const shiftX = rotated ? shift : 0, shiftY = rotated ? 0 : shift;
+            const fitH = (H - 2 * (reserve + side + shiftY)) / cardH;
+            const fitW = (W - 2 * (16 + shiftX)) / (n * cardW + (n - 1) * gap);
+            const fit = Math.max(0.3, Math.min(1, fitH, fitW));
+            view.style.setProperty('--fit', fit.toFixed(4));
+            if (debugEl) debugEl.textContent =
+                `inner ${innerWidth}×${innerHeight} | screen ${screen.width}×${screen.height} | standalone ${!!navigator.standalone}\n` +
+                `wrapper ${W}×${H} | reserve ${reserve} | side ${side} | shift ${shift} | fit ${fit.toFixed(3)}`;
+        }
+
+        // 在地址后面加 ?debug 打开：真机上一张截图就能看到所有实测值
+        const debugEl = /[?&]debug\b/.test(location.search) ? document.createElement('pre') : null;
+        if (debugEl) {
+            debugEl.style.cssText = 'position:fixed;left:8px;right:8px;top:50%;z-index:9999;margin:0;padding:8px;font:12px/1.5 monospace;white-space:pre-wrap;color:#0f0;background:rgba(0,0,0,.75);pointer-events:none';
+            document.body.appendChild(debugEl);
+        }
+
+        let fitQueued = false;
+        function queueFit() {
+            if (fitQueued) return;
+            fitQueued = true;
+            requestAnimationFrame(() => { fitQueued = false; fitLayout(); });
+        }
+        // 窗口尺寸、横竖屏切换、换标签、倒计时输入框出现/消失、字体加载完，都会改变这些尺寸
+        if (window.ResizeObserver) {
+            const ro = new ResizeObserver(queueFit);
+            [appWrapper, topBarEl, bottomBarEl, ...document.querySelectorAll('.v-above, .v-below')].forEach(el => ro.observe(el));
+        }
+        window.addEventListener('resize', queueFit);
+        rotateBtn.addEventListener('click', queueFit);
+        document.querySelectorAll('.nav-item').forEach(el => el.addEventListener('click', queueFit));
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(queueFit);
+        fitLayout();
     </script>
 </body>
 </html>
