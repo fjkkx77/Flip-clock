@@ -107,9 +107,14 @@
         body.idle-cursor { cursor: none !important; }
 
         /* ======= 包装器 (负责旋转防溢出) ======= */
+        /* 包装器 = 页面实际铺满的"画框"，由 JS 实测后写进 --fx/--fy/--fw/--fh（见 syncFrame）。
+           不用 top:50% —— 那是相对页面布局高度算的，iOS 从主屏幕打开时布局高度会比真实屏幕短一个状态栏，
+           中心就跟着偏上。括号里的 100vw/100dvh 只是 JS 还没跑时的兜底。 */
         #app-wrapper {
-            position: absolute; top: 50%; left: 50%; width: 100%; height: 100%;
-            transform: translate(-50%, -50%); 
+            position: fixed;
+            left: calc(var(--fx, 0px) + var(--fw, 100vw) / 2); top: calc(var(--fy, 0px) + var(--fh, 100dvh) / 2);
+            width: var(--fw, 100vw); height: var(--fh, 100dvh);
+            transform: translate(-50%, -50%);
             display: flex; flex-direction: column; justify-content: space-between;
             transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
             padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
@@ -119,6 +124,7 @@
         /* 顺时针转 90° 后：包装器的 上→屏幕右、右→屏幕下、下→屏幕左、左→屏幕上，
            安全区要按这个对应关系取（之前上下两条写反了：灵动岛那侧只留了底部的 34px） */
         body.force-landscape #app-wrapper {
+            width: var(--fh, 100dvh); height: var(--fw, 100vw); /* 转 90° 前先把宽高对调，转完正好铺满画框 */
             transform: translate(-50%, -50%) rotate(90deg);
             padding-top: env(safe-area-inset-right); padding-right: env(safe-area-inset-bottom);
             padding-bottom: env(safe-area-inset-left); padding-left: env(safe-area-inset-top);
@@ -152,13 +158,11 @@
         /* ======= 视图容器 ======= */
         /* 主体绝对居中：视图铺满整个包装器（不受上下栏高度差和安全区左右不等的影响），
            三行网格 = 上方附属(日期/子标签) | 卡片 | 下方附属(签名/按钮)，
-           上下两行强制等高(minmax(0,1fr))，卡片就永远落在正中；上下留出同样的 --reserve 给导航栏/按钮栏。
-           translate 用独立属性，是为了和 fadeIn 动画里的 transform 互不覆盖。 */
+           上下两行强制等高(minmax(0,1fr))，卡片就永远落在正中；上下留出同样的 --reserve 给导航栏/按钮栏。 */
         .view-container {
             display: none; position: absolute; inset: 0;
             grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); justify-items: center;
             padding: var(--reserve, 0px) 0;
-            translate: var(--cx, 0px) var(--cy, 0px);
             animation: fadeIn 0.4s ease-out;
         }
         .view-container.active { display: grid; }
@@ -575,15 +579,35 @@
         let idleTimer;
         let isImmersiveMode = false;
 
-        // 修正 iOS Safari 的 100vh 漂移：用 visualViewport/innerHeight 校正出真实高度写入 --vh100
-        function syncViewportHeightVar() {
-            const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-            document.documentElement.style.setProperty('--vh100', h + 'px');
+        // 画框 = 页面实际铺满的那块屏幕区域。主体要对着它的正中，所以它必须量准：
+        // - 没有浏览器界面时（从主屏幕打开 / 全屏），整个窗口就是画面 → 用 outerWidth × outerHeight。
+        //   iPhone 实测（393×852 屏）：这时 innerHeight 一会儿 838 一会儿 852、页面布局高度只有 793，
+        //   只有 outer 两次都稳定等于真实屏幕 852。
+        // - 有浏览器界面时（地址栏/工具栏占掉一部分），用 visualViewport，也就是真正看得见的那块。
+        function getFrame() {
+            const vv = window.visualViewport;
+            const noBrowserUI = window.navigator.standalone === true
+                || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches
+                || !!(document.fullscreenElement || document.webkitFullscreenElement);
+            if (noBrowserUI && window.outerWidth > 0 && window.outerHeight > 0)
+                return { x: 0, y: 0, w: window.outerWidth, h: window.outerHeight, src: 'outer' };
+            if (vv) return { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height, src: 'visualViewport' };
+            return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight, src: 'inner' };
         }
-        window.addEventListener('resize', syncViewportHeightVar);
-        window.addEventListener('orientationchange', syncViewportHeightVar);
-        if (window.visualViewport) window.visualViewport.addEventListener('resize', syncViewportHeightVar);
-        syncViewportHeightVar();
+        let frame = getFrame();
+        function syncFrame() {
+            frame = getFrame();
+            const s = document.documentElement.style;
+            s.setProperty('--fx', frame.x + 'px'); s.setProperty('--fy', frame.y + 'px');
+            s.setProperty('--fw', frame.w + 'px'); s.setProperty('--fh', frame.h + 'px');
+            s.setProperty('--vh100', frame.h + 'px');
+        }
+        window.addEventListener('resize', syncFrame);
+        window.addEventListener('orientationchange', syncFrame);
+        document.addEventListener('fullscreenchange', syncFrame);
+        document.addEventListener('webkitfullscreenchange', syncFrame);
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', syncFrame);
+        syncFrame();
 
         function resetIdleTimer() {
             clearTimeout(idleTimer);
@@ -638,18 +662,9 @@
         document.addEventListener('fullscreenchange', checkFullscreenState);
         document.addEventListener('webkitfullscreenchange', checkFullscreenState);
 
-        // ★ 精准计算强制横屏容器大小 ★
+        // 强制横屏时包装器的宽高对调由 CSS 用 --fw/--fh 完成，这里只需重新量一次画框
         const rotateBtn = document.getElementById('rotate-btn');
-        function updateLandscapeDimensions() {
-            const wrapper = document.getElementById('app-wrapper');
-            if (document.body.classList.contains('force-landscape')) {
-                wrapper.style.width = window.innerHeight + 'px';
-                wrapper.style.height = window.innerWidth + 'px';
-            } else {
-                wrapper.style.width = '100%';
-                wrapper.style.height = '100%';
-            }
-        }
+        function updateLandscapeDimensions() { syncFrame(); }
 
         rotateBtn.addEventListener('click', () => {
             document.body.classList.toggle('force-landscape');
@@ -670,18 +685,6 @@
         autoHideRotateBtn(); // 初始化检测
 
         /* ================= 6. 主体居中 + 按实测空间等比缩放 ================= */
-        // iOS 26 的 WebKit 回归（WebKit Bug 301108）：从主屏幕打开、且状态栏样式是 black-translucent 时，
-        // 页面从屏幕最顶端(y=0)开始画，但上报的视口高度却减掉了顶部安全区——
-        // 例如 iPhone 16 Pro 屏幕 874 高，innerHeight 只有 812，下面 62px 页面够不着。
-        // 于是"视口的中心"比"屏幕的中心"高出一截。这里算出这段差值的一半，把主体挪回物理屏幕正中；
-        // 按钮栏仍然留在页面够得着的范围里。不是这种情况时差值为 0，什么都不做。
-        function physicalCenterShift() {
-            if (!window.navigator.standalone) return 0;          // 只有 iOS 主屏幕模式才有这个 bug
-            if (window.innerWidth > window.innerHeight) return 0; // 手机真横过来时状态栏会隐藏，情况不同，不动
-            const gap = Math.max(screen.width, screen.height) - window.innerHeight;
-            return (gap > 0 && gap < 120) ? gap / 2 : 0;          // 超出合理范围说明不是这个 bug，宁可不动
-        }
-
         const appWrapper = document.getElementById('app-wrapper');
         const cardProbe = document.getElementById('card-probe');
         const gapProbe = document.getElementById('gap-probe');
@@ -695,12 +698,6 @@
                                      parseFloat(cs.paddingBottom) + bottomBarEl.offsetHeight);
             appWrapper.style.setProperty('--reserve', reserve + 'px');
 
-            // 旋转后"屏幕往下" = 包装器的 +x 方向；没旋转时就是 +y
-            const shift = physicalCenterShift();
-            const rotated = document.body.classList.contains('force-landscape');
-            appWrapper.style.setProperty('--cx', (rotated ? shift : 0) + 'px');
-            appWrapper.style.setProperty('--cy', (rotated ? 0 : shift) + 'px');
-
             const view = document.querySelector('.view-container.active');
             if (!view) return;
             const W = appWrapper.clientWidth, H = appWrapper.clientHeight; // 布局尺寸，不受 rotate 影响
@@ -708,13 +705,11 @@
             const n = view.querySelectorAll('.clock-group').length;
             // 上下附属内容取较高的一侧，两边都按它留，才能保证卡片居中时两边都不会压到东西
             const side = Math.max(view.querySelector('.v-above').offsetHeight, view.querySelector('.v-below').offsetHeight);
-            // 主体被挪了 shift，朝挪动方向那一侧就少了 shift 的空间；两侧对称地按这个少的算
-            const shiftX = rotated ? shift : 0, shiftY = rotated ? 0 : shift;
-            const fitH = (H - 2 * (reserve + side + shiftY)) / cardH;
-            const fitW = (W - 2 * (16 + shiftX)) / (n * cardW + (n - 1) * gap);
+            const fitH = (H - 2 * (reserve + side)) / cardH;
+            const fitW = (W - 2 * 16) / (n * cardW + (n - 1) * gap);
             const fit = Math.max(0.3, Math.min(1, fitH, fitW));
             view.style.setProperty('--fit', fit.toFixed(4));
-            if (debugEl) renderDebug({ W, H, reserve, side, shift, fit });
+            if (debugEl) renderDebug({ W, H, reserve, side, fit });
         }
 
         // 诊断面板：地址加 ?debug，或连点数字卡片 5 下（主屏幕模式没有地址栏）。真机一张截图就能看到所有实测值
@@ -740,7 +735,8 @@
                 `vh ${probe('100vh')} svh ${probe('100svh')} lvh ${probe('100lvh')} dvh ${probe('100dvh')}`,
                 `inset 上${inset('top')} 右${inset('right')} 下${inset('bottom')} 左${inset('left')}`,
                 `standalone ${navigator.standalone}  dm-standalone ${mm('(display-mode: standalone)')} fullscreen ${mm('(display-mode: fullscreen)')} browser ${mm('(display-mode: browser)')}`,
-                `wrapper ${s.W}×${s.H}  reserve ${s.reserve}  side ${s.side}  shift ${s.shift}  fit ${s.fit.toFixed(3)}`,
+                `画框(${frame.src}) x${frame.x} y${frame.y} ${Math.round(frame.w)}×${Math.round(frame.h)}  中心应在 x${Math.round(frame.x + frame.w / 2)} y${Math.round(frame.y + frame.h / 2)}`,
+                `wrapper ${s.W}×${s.H}  reserve ${s.reserve}  side ${s.side}  fit ${s.fit.toFixed(3)}`,
                 `卡片中心 x${Math.round((b.left + b.right) / 2)} y${Math.round((b.top + b.bottom) / 2)}`,
                 navigator.userAgent
             ].join('\n');
