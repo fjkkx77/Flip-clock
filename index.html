@@ -4,19 +4,41 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>完美自适应 - 翻页时钟 (终极修复版)</title>
-    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <meta name="apple-mobile-web-app-title" content="翻页时钟">
+    <meta name="description" content="复古翻页时钟，带番茄钟、正计时和倒计时，适合手机横放、桌面装饰和直播背景。">
+    <title>翻页时钟</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <!-- 数字字体放在仓库里（只含 0-9 和冒号，1.6KB）：以前从 Google Fonts 拉，
+         实测首屏要等 2~7 秒，国内不开代理还可能整个加载不出来 -->
+    <link rel="preload" href="fonts/oswald-600-digits.woff2" as="font" type="font/woff2" crossorigin>
+    <script>
+        // 主题要在第一帧之前定下来，否则浅色用户每次打开都会先闪一下黑屏
+        try { if (localStorage.getItem('theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) {}
+    </script>
     <style>
+        @font-face {
+            font-family: 'Oswald'; font-style: normal; font-weight: 600; font-display: swap;
+            src: url(fonts/oswald-600-digits.woff2) format('woff2'); unicode-range: U+30-3A;
+        }
+
         :root {
-            /* 基础颜色变量 */
+            /* 基础颜色变量（暗夜经典） */
             --bg-color: #000000;
             --card-bg: #141414;
             --text-color: #f0f0f0;
             --ui-text: #888888;
             --ui-text-active: #ffffff;
             --split-line: #000000;
-            
+            --accent: #ff9f0a;
+            --card-shadow: 0 15px 40px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.05);
+            --card-border: rgba(255,255,255,0.02);
+            --digit-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            --flip-dim: 0.2;
+
             /* 控件颜色变量 */
             --btn-bg: rgba(255, 255, 255, 0.08);
             --btn-text: #ffffff;
@@ -26,34 +48,59 @@
             --input-border: rgba(255, 255, 255, 0.15);
             --input-text: #ffffff;
             --modal-content-bg: rgba(28, 28, 30, 0.9);
-            
-            /* 标准宽屏/电脑尺寸系统 */
-            --card-w: clamp(110px, 16vw, 240px);
-            --card-h: clamp(140px, 22vw, 320px);      
-            --digit-w: calc(var(--card-w) / 2);       
-            --font-sz: clamp(100px, 16vw, 220px);     
+
+            /* 尺寸：每种布局只定卡片宽度这一个量，高度和字号按设计比例推出来。
+               这里只写"最大想要多大"——不再设 240px 这类像素上限（2560 宽的屏上时钟只占 1/3），
+               真正放多大由 fitLayout 按实测剩余空间算出 --fit(≤1) 统一缩放 */
+            --card-w: max(110px, 16vw);
+            --card-h: calc(var(--card-w) * 1.35);
+            --font-sz: calc(var(--card-w) * 0.92);
             --card-gap: clamp(16px, 3vw, 60px);
             --card-radius: clamp(12px, 2vw, 24px);
+            --icon-size: clamp(44px, 2.6vw, 60px);
+            --ui-font: clamp(14px, calc(0.45vw + 8px), 20px);
+        }
+
+        /* 晨曦极简：对比度按 4.5:1 校过（#6e6e73 在 #f5f5f7 上约 4.7:1，原来的 #888 只有 3.25:1）；
+           阴影单独给一套——暗色那套 0.7 黑在浅底上是一大片黑雾 */
+        :root[data-theme="light"] {
+            --bg-color: #f5f5f7;
+            --card-bg: #ffffff;
+            --text-color: #1d1d1f;
+            --ui-text: #6e6e73;
+            --ui-text-active: #000000;
+            --split-line: rgba(0,0,0,0.1);
+            --accent: #c93400;
+            --card-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+            --card-border: rgba(0,0,0,0.06);
+            --digit-shadow: none;
+            --flip-dim: 0.75;
+            --btn-bg: rgba(0,0,0,0.05);
+            --btn-text: #1d1d1f;
+            --btn-border: rgba(0,0,0,0.1);
+            --btn-hover: rgba(0,0,0,0.1);
+            --input-bg: rgba(0,0,0,0.03);
+            --input-border: rgba(0,0,0,0.15);
+            --input-text: #1d1d1f;
+            --modal-content-bg: rgba(255, 255, 255, 0.95);
         }
 
         /* 手机物理竖屏状态的响应式尺寸 */
         @media (orientation: portrait) {
             :root {
                 --card-w: clamp(75px, 28vw, 260px);
-                --card-h: clamp(110px, 38vw, 340px);
-                --font-sz: clamp(70px, 26vw, 250px);
                 --card-gap: clamp(6px, 2vw, 20px);
             }
         }
 
-        /* ★ 核心魔法：横屏状态下的专属极限空间优化（适用物理横屏及强制横屏） ★ */
+        /* ★ 横屏状态下的专属空间优化（适用物理横屏及强制横屏） ★ */
         body.force-landscape {
             /* 横屏时卡片高度是被挤压的一边。这里只写"最大想要多大"(220px，设计取值)；
-               实际能放多大 = 画框高度 − 两条栏 − 上下附属内容，这些全由 JS 的 fitLayout 实测后算出 --fit 缩放。
-               以前这里是 calc(100vw - 190px)，190px 是"其余元素大概多高"的估计值——一个本该量出来的量
-               被写成了常数，就是死参数，已删。宽度、字号按设计比例从高度反推。 */
-            --card-h: 220px;
-            --card-w: calc(var(--card-h) / 1.35);
+               实际能放多大 = 画框高度 − 两条栏 − 上下附属内容，这些全由 JS 的 fitLayout 实测后算出 --fit 缩放。 */
+            --card-w: calc(220px / 1.35);
+            /* 这两条必须在这里重写：自定义属性里的 var() 在声明它的元素上就算好了，
+               只在 body 上改 --card-w，从 :root 继承下来的 --card-h/--font-sz 还是按旧宽度算的 */
+            --card-h: calc(var(--card-w) * 1.35);
             --font-sz: calc(var(--card-w) * 0.92);
             --card-gap: clamp(10px, 3vh, 30px);
         }
@@ -67,15 +114,13 @@
             .date-display { margin-bottom: clamp(5px, 2vh, 10px) !important; font-size: clamp(12px, 3.2vh, 15px) !important; }
             .quote { margin-top: clamp(5px, 2vh, 10px) !important; font-size: clamp(12px, 3.2vh, 15px) !important; }
             .v-below { padding-top: clamp(3px, 1vh, 6px) !important; }
-            .sub-tab-container { margin-bottom: 8px !important; }
-            .time-input-group { margin-bottom: 10px !important; }
+            .sub-tab-container { margin-bottom: 0 !important; }
+            .time-input-group { margin-bottom: 6px !important; }
             .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
 
             :root {
                 /* 同上：只写最大期望尺寸，实际大小由 fitLayout 按实测剩余空间缩放 */
-                --card-h: 220px;
-                --card-w: calc(var(--card-h) / 1.35);
-                --font-sz: calc(var(--card-w) * 0.92);
+                --card-w: calc(220px / 1.35);
                 --card-gap: clamp(10px, 3vw, 30px);
             }
         }
@@ -85,21 +130,27 @@
         body.force-landscape .date-display { margin-bottom: clamp(5px, 2vw, 10px) !important; font-size: clamp(12px, 3.2vw, 15px) !important; }
         body.force-landscape .quote { margin-top: clamp(5px, 2vw, 10px) !important; font-size: clamp(12px, 3.2vw, 15px) !important; }
         body.force-landscape .v-below { padding-top: clamp(3px, 1vw, 6px) !important; }
-        body.force-landscape .sub-tab-container { margin-bottom: 8px !important; }
-        body.force-landscape .time-input-group { margin-bottom: 10px !important; }
+        body.force-landscape .sub-tab-container { margin-bottom: 0 !important; }
+        body.force-landscape .time-input-group { margin-bottom: 6px !important; }
         body.force-landscape .btn-apple { padding: 6px 15px !important; font-size: 13px !important; }
+        /* 横屏高度最紧：计时器的子标签和倒计时输入框并成一行，少占一行高度，卡片就能大一些 */
+        body.force-landscape #view-timer .v-above { flex-direction: row; gap: 16px; }
+        @media (max-height: 450px) { #view-timer .v-above { flex-direction: row; gap: 16px; } }
 
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+        button { font: inherit; color: inherit; background: none; border: 0; }
 
         body {
             background-color: var(--bg-color); color: var(--ui-text);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
             width: 100vw; overflow: hidden;
             /* iOS Safari 地址栏收起/展开时 100vh 与真实可视高度不同步，
-               会被 #app-wrapper 的 translate(-50%,-50%) 放大成整体上移错位，
                这里用 dvh 做渐进增强，并用 JS 校正的 --vh100 兜底（微信 WKWebView 等旧内核可能不支持 dvh） */
             height: 100vh; height: 100dvh; height: var(--vh100, 100dvh);
-            user-select: none; transition: background-color 0.4s ease;
+            /* Safari 只认带前缀的那条（WebKit 实测：只写 user-select 时 -webkit-user-select 仍是 text），
+               长按数字会选中文字、弹放大镜 */
+            -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+            transition: background-color 0.4s ease;
         }
 
         body.idle-cursor { cursor: none !important; }
@@ -131,27 +182,25 @@
         /* ======= 导航栏 ======= */
         .top-bar {
             display: flex; justify-content: space-between; align-items: center;
-            padding: clamp(16px, 3vh, 32px) clamp(20px, 4vw, 60px); 
-            font-size: 14px; font-weight: 500; z-index: 100; transition: opacity 0.8s ease, color 0.3s;
+            padding: clamp(16px, 3vh, 32px) clamp(20px, 4vw, 60px);
+            font-size: var(--ui-font); font-weight: 500; z-index: 100; transition: opacity 0.8s ease, color 0.3s;
         }
-        
+        .bottom-bar-wrap { margin-top: auto; padding-bottom: clamp(10px, 3vh, 30px); justify-content: flex-start; }
+
         .idle-hidden { opacity: 0 !important; pointer-events: none !important; }
 
-        .icon-btn { cursor: pointer; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; transition: 0.3s; -webkit-tap-highlight-color: transparent;}
-        .icon-btn svg { fill: var(--ui-text); width: 22px; height: 22px; transition: 0.3s; }
-        /* hover 只给有鼠标的设备：触屏上点过之后 hover 会一直粘着，按钮背后留一个灰圆 */
-        @media (hover: hover) {
-            .icon-btn:hover { background: var(--btn-bg); }
-            .icon-btn:hover svg { fill: var(--ui-text-active); }
-        }
+        .icon-btn { cursor: pointer; display: flex; align-items: center; justify-content: center; width: var(--icon-size); height: var(--icon-size); border-radius: 50%; transition: 0.3s; -webkit-tap-highlight-color: transparent; }
+        .icon-btn svg { fill: var(--ui-text); width: 50%; height: 50%; transition: 0.3s; }
+        .icon-btn:focus-visible, .nav-item:focus-visible, .sub-tab:focus-visible, .btn-apple:focus-visible, .theme-card:focus-visible { outline: 2px solid var(--ui-text-active); outline-offset: 2px; }
 
-        .spacer { width: 44px; height: 44px; pointer-events: none; }
+        .spacer { width: var(--icon-size); height: var(--icon-size); pointer-events: none; }
+        .icon-group { display: flex; gap: 10px; }
 
-        .nav-menu { display: flex; gap: clamp(15px, 3vw, 50px); }
-        .nav-item { cursor: pointer; position: relative; padding-bottom: 6px; transition: color 0.3s; letter-spacing: 1px; -webkit-tap-highlight-color: transparent;}
-        .nav-item:hover { color: var(--ui-text-active); }
+        .nav-menu { display: flex; gap: clamp(8px, 2vw, 40px); }
+        /* 热区至少 44×44（Apple HIG 的最小可点尺寸）；以前只有 30×26 */
+        .nav-item { cursor: pointer; position: relative; min-width: 44px; min-height: 44px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; transition: color 0.3s; letter-spacing: 1px; -webkit-tap-highlight-color: transparent; }
         .nav-item.active { color: var(--ui-text-active); font-weight: 600; }
-        .nav-item.active::after { content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; background-color: var(--ui-text-active); border-radius: 50%; }
+        .nav-item.active::after { content: ''; position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; background-color: var(--ui-text-active); border-radius: 50%; }
 
         /* ======= 视图容器 ======= */
         /* 主体绝对居中：视图铺满整个包装器（不受上下栏高度差和安全区左右不等的影响），
@@ -172,21 +221,26 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
         .date-display { font-size: clamp(14px, 1.5vw, 22px); color: var(--ui-text); margin-bottom: clamp(15px, 4vh, 60px); letter-spacing: 2px; font-weight: 500; }
-        .quote { font-size: clamp(12px, 1.2vw, 18px); color: var(--ui-text); letter-spacing: 3px; cursor: text; outline: none; padding: 10px; transition: 0.3s; margin-top: clamp(20px, 6vh, 80px); }
+        /* 签名：只收纯文本（粘贴不带格式）、回车即完成、限长；清空后仍留出可点的区域 */
+        .quote { font-size: clamp(12px, 1.2vw, 18px); color: var(--ui-text); letter-spacing: 3px; cursor: text; outline: none; padding: 10px; transition: 0.3s; margin-top: clamp(20px, 6vh, 80px);
+                 min-width: 8em; min-height: calc(1.5em + 20px); line-height: 1.5; text-align: center; max-width: 90vw; overflow-wrap: anywhere;
+                 -webkit-user-select: text; user-select: text; }
         .quote:focus { color: var(--ui-text-active); border-bottom: 1px dashed var(--ui-text); }
-        
+        .quote:empty:focus::before { content: attr(data-placeholder); opacity: 0.5; }
+
         /* 强制同行排列：杜绝 flex-wrap，防止横屏变成竖排堆叠 */
         /* --fit 由 JS 按实测剩余空间算出(≤1)：放不下时卡片/字号/间距整体等比缩小，而不是去挤上下的文字和按钮 */
         .clock-container { display: flex; flex-wrap: nowrap; gap: calc(var(--card-gap) * var(--fit, 1)); justify-content: center; align-items: center; }
 
         /* ======= 3D 翻页卡片 (终极免 Mask 防割裂技术) ======= */
         .clock-group {
+            --r: calc(var(--card-radius) * var(--fit, 1));
             display: flex; width: calc(var(--card-w) * var(--fit, 1)); height: calc(var(--card-h) * var(--fit, 1)); flex-shrink: 0; /* 防止被挤压 */
-            background-color: var(--card-bg); position: relative; 
-            border-radius: var(--card-radius);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.02);
-            transform: translate3d(0, 0, 0); 
+            background-color: var(--card-bg); position: relative;
+            border-radius: var(--r);
+            box-shadow: var(--card-shadow);
+            border: 1px solid var(--card-border);
+            transform: translate3d(0, 0, 0);
             /* 彻底舍弃 overflow: hidden 和 mask-image，杜绝 Safari 引擎崩溃 */
         }
 
@@ -195,33 +249,40 @@
             background: var(--split-line); transform: translateY(-50%); z-index: 10;
             box-shadow: 0 1px 3px rgba(0,0,0,0.6);
         }
+        :root[data-theme="light"] .clock-group::after { box-shadow: none; }
 
-        .flip-digit { flex: 1; height: 100%; position: relative; perspective: 1200px; transform: translate3d(0, 0, 0); }
+        /* 计时结束：卡片描边闪几下（只动阴影，不改尺寸，布局不跳） */
+        .clock-container.ring .clock-group { animation: ring 0.5s ease-in-out 8 alternate; }
+        @keyframes ring { to { box-shadow: var(--card-shadow), 0 0 0 3px var(--accent); } }
+
+        .flip-digit { flex: 1; height: 100%; position: relative; perspective: calc(var(--card-h) * var(--fit, 1) * 4); /* 透视距离随卡片大小走：写死 1200px 时大屏上翻页片会戳出卡片边缘 */ transform: translate3d(0, 0, 0); }
 
         .half {
             position: absolute; left: 0; width: 100%; height: 50%;
             background: var(--card-bg); color: var(--text-color);
-            font-family: 'Oswald', sans-serif; font-weight: 600; font-size: calc(var(--font-sz) * var(--fit, 1));
-            overflow: hidden; transform-style: preserve-3d; 
+            font-family: 'Oswald', "DIN Alternate", "Arial Narrow", sans-serif; font-weight: 600; font-size: calc(var(--font-sz) * var(--fit, 1));
+            overflow: hidden; transform-style: preserve-3d;
             -webkit-backface-visibility: hidden; backface-visibility: hidden;
-            will-change: transform; font-variant-numeric: tabular-nums; 
+            font-variant-numeric: tabular-nums;
         }
 
         /* 智能精准圆角匹配，代替父级 overflow 裁切 */
-        .flip-digit:first-child .half.top { border-top-left-radius: var(--card-radius); }
-        .flip-digit:first-child .half.bottom { border-bottom-left-radius: var(--card-radius); }
-        .flip-digit:last-child .half.top { border-top-right-radius: var(--card-radius); }
-        .flip-digit:last-child .half.bottom { border-bottom-right-radius: var(--card-radius); }
+        .flip-digit:first-child .half.top { border-top-left-radius: var(--r); }
+        .flip-digit:first-child .half.bottom { border-bottom-left-radius: var(--r); }
+        .flip-digit:last-child .half.top { border-top-right-radius: var(--r); }
+        .flip-digit:last-child .half.bottom { border-bottom-right-radius: var(--r); }
 
         .half span {
-            position: absolute; left: 0; width: 100%; height: 200%; display: flex; justify-content: center; align-items: center; 
-            letter-spacing: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); white-space: nowrap; 
+            position: absolute; left: 0; width: 100%; height: 200%; display: flex; justify-content: center; align-items: center;
+            letter-spacing: 0; text-shadow: var(--digit-shadow); white-space: nowrap;
         }
         .half.top { top: 0; transform-origin: bottom; }
         .half.top span { top: 0; }
         .half.bottom { bottom: 0; transform-origin: top; }
-        .half.bottom span { bottom: 0; } 
+        .half.bottom span { bottom: 0; }
 
+        /* will-change 只给真正会动的翻页片；以前 64 个静态半片也常驻合成层 */
+        .half.flip { will-change: transform; }
         .half.top.flip { z-index: 4; display: none; }
         .half.bottom.flip { z-index: 5; transform: rotateX(90deg); display: none; }
         .flip-anim-top { display: block !important; animation: flipTop 0.25s ease-in forwards; }
@@ -229,353 +290,682 @@
 
         @keyframes flipTop {
             0% { transform: rotateX(0deg); filter: brightness(1); }
-            100% { transform: rotateX(-90deg); filter: brightness(0.2); }
+            100% { transform: rotateX(-90deg); filter: brightness(var(--flip-dim)); }
         }
         @keyframes flipBottom {
-            0% { transform: rotateX(90deg); filter: brightness(0.2); }
+            0% { transform: rotateX(90deg); filter: brightness(var(--flip-dim)); }
             100% { transform: rotateX(0deg); filter: brightness(1); }
         }
 
         /* ======= 按钮与控制组件 ======= */
         .btn-group { display: flex; gap: clamp(10px, 2vw, 20px); align-items: center; justify-content: center; flex-wrap: wrap; }
-        
+
         .btn-apple {
-            background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--btn-border); 
-            padding: clamp(10px, 1.5vh, 12px) clamp(20px, 3vw, 35px); 
-            font-size: clamp(14px, 1.5vh, 16px); border-radius: 30px; cursor: pointer; 
+            background-color: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--btn-border);
+            padding: clamp(10px, 1.5vh, 12px) clamp(20px, 3vw, 35px); min-height: 44px;
+            font-size: clamp(14px, 1.5vh, 16px); border-radius: 30px; cursor: pointer;
             transition: all 0.3s; font-weight: 500; backdrop-filter: blur(5px); -webkit-tap-highlight-color: transparent;
         }
-        .btn-apple:hover { background-color: var(--btn-hover); transform: translateY(-2px); }
         .btn-apple:active { transform: scale(0.96); }
-        
-        .sub-tab-container { display: flex; gap: 30px; margin-bottom: clamp(15px, 2vh, 25px); }
-        .sub-tab { cursor: pointer; font-size: 14px; color: var(--ui-text); transition: 0.3s; font-weight: 500; padding-bottom: 4px; -webkit-tap-highlight-color: transparent;}
-        .sub-tab:hover { color: var(--ui-text-active); }
-        .sub-tab.active { color: var(--ui-text-active); border-bottom: 2px solid var(--ui-text-active); }
-        
-        .time-input-group { display: flex; gap: 10px; align-items: center; margin-bottom: clamp(15px, 2vh, 30px); }
+        .btn-apple.is-running { background-color: rgba(255,59,48,0.15); color: #ff3b30; border-color: rgba(255,59,48,0.3); }
+        .btn-apple.is-paused { background-color: rgba(255,159,10,0.15); color: var(--accent); border-color: rgba(255,159,10,0.3); }
+        .btn-apple.is-done { background-color: rgba(255,159,10,0.2); color: var(--accent); border-color: var(--accent); }
+
+        .sub-tab-container { display: flex; gap: 20px; margin-bottom: clamp(4px, 1vh, 15px); }
+        .sub-tab { cursor: pointer; position: relative; min-width: 44px; min-height: 44px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; color: var(--ui-text); transition: 0.3s; font-weight: 500; -webkit-tap-highlight-color: transparent; }
+        .sub-tab.active { color: var(--ui-text-active); }
+        .sub-tab.active::after { content: ''; position: absolute; left: 6px; right: 6px; bottom: 8px; height: 2px; background: var(--ui-text-active); }
+        .sub-tab[aria-disabled="true"] { opacity: 0.35; cursor: not-allowed; }
+
+        .time-input-group { display: flex; gap: 8px; align-items: center; margin-bottom: clamp(10px, 2vh, 24px); }
         .time-input {
             background: var(--input-bg); border: 1px solid var(--input-border);
-            color: var(--input-text); font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 500;
-            padding: 6px 5px; border-radius: 8px; width: 45px; text-align: center; outline: none; transition: 0.3s;
+            color: var(--input-text); font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 600;
+            padding: 6px 5px; border-radius: 8px; width: 48px; min-height: 40px; text-align: center; outline: none; transition: 0.3s;
+            -webkit-user-select: text; user-select: text; -moz-appearance: textfield; appearance: textfield;
         }
+        .time-input::-webkit-outer-spin-button, .time-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .time-input:focus { border-color: var(--ui-text-active); }
+        .time-input:disabled { opacity: 0.4; }
         .time-label { color: var(--ui-text); font-size: 14px; font-weight: 500; }
 
-        /* 模态框及固化卡片 */
-        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); display:none; justify-content:center; align-items:center; z-index:1000; opacity:0; transition:0.3s; }
-        .modal-overlay.active { display:flex; opacity:1; }
-        .modal-content { background: var(--modal-content-bg); width:85%; max-width:500px; padding:30px; border-radius:24px; border:1px solid rgba(128,128,128,0.2); position:relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); transition: background-color 0.4s; }
-        .theme-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; }
-        .theme-card { 
-            padding:20px 10px; border-radius:16px; 
-            border: 2px solid var(--input-border); text-align:center; cursor:pointer; 
+        /* 提示条：计时结束、操作提示 */
+        .toast { position: absolute; left: 50%; top: calc(var(--reserve, 60px) + 8px); transform: translate(-50%, -8px); z-index: 500;
+                 background: var(--modal-content-bg); color: var(--ui-text-active); border: 1px solid var(--btn-border);
+                 padding: 10px 18px; border-radius: 20px; font-size: 14px; line-height: 1.5; text-align: center; width: max-content; max-width: calc(100% - 32px); pointer-events: none;
+                 opacity: 0; transition: opacity 0.25s, transform 0.25s; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+        .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+        /* 模态框：用 visibility+opacity 而不是 display，淡入淡出才真的会播 */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); display: flex; justify-content: center; align-items: center; z-index: 1000;
+                         visibility: hidden; opacity: 0; transition: opacity 0.25s, visibility 0s 0.25s; }
+        .modal-overlay.active { visibility: visible; opacity: 1; transition: opacity 0.25s; }
+        .modal-content { background: var(--modal-content-bg); width: 85%; max-width: 500px; max-height: 92%; overflow-y: auto; padding: clamp(16px, 4vmin, 30px); border-radius: 24px; border: 1px solid rgba(128,128,128,0.2); position: relative; box-shadow: 0 25px 50px rgba(0,0,0,0.5); transition: background-color 0.4s; }
+        .modal-title { color: var(--ui-text-active); text-align: center; margin-bottom: 12px; font-weight: 500; font-size: 18px; }
+        .modal-label { font-size: 13px; color: var(--ui-text); margin: 14px 0 8px; }
+        .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .theme-card {
+            padding: clamp(10px, 3vmin, 20px) 10px; border-radius: 16px; min-height: 44px;
+            border: 2px solid var(--input-border); text-align: center; cursor: pointer;
             transition: all 0.3s ease; -webkit-tap-highlight-color: transparent;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }
-        .theme-card:hover { border-color: var(--ui-text-active); transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+        .theme-card[aria-pressed="true"] { border-color: var(--accent); }
+        .theme-card .sample { font-family: 'Oswald', sans-serif; font-size: 32px; font-weight: 600; display: block; }
+        .theme-card .name { color: #888888; font-size: 12px; }
+        .setting-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .setting-row .time-input { width: 56px; }
+        .modal-hint { font-size: 12px; color: var(--ui-text); margin-top: 14px; line-height: 1.6; }
+
+        /* hover 只给有鼠标的设备：触屏上点过之后 hover 会一直粘着（按钮停在浮起/变色的状态） */
+        @media (hover: hover) {
+            .icon-btn:hover { background: var(--btn-bg); }
+            .icon-btn:hover svg { fill: var(--ui-text-active); }
+            .nav-item:hover, .sub-tab:hover { color: var(--ui-text-active); }
+            .btn-apple:hover { background-color: var(--btn-hover); transform: translateY(-2px); }
+            .theme-card:hover { border-color: var(--ui-text-active); transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .view-container { animation: none; }
+            .clock-container.ring .clock-group { animation-iteration-count: 2; }
+        }
     </style>
 </head>
 <body>
     <div id="app-wrapper">
 
         <div class="top-bar">
-            <div class="icon-btn" onclick="document.getElementById('theme-modal').classList.add('active')" title="外观设置">
-                <svg viewBox="0 0 24 24"><path d="M12,22C6.49,22 2,17.51 2,12C2,6.49 6.49,2 12,2C17.51,2 22,6.49 22,12C22,13.1 21.1,14 20,14C19.66,14 19.34,13.88 19.09,13.66C18.84,13.43 18.5,13.29 18.12,13.29C17.29,13.29 16.63,13.96 16.63,14.79C16.63,15.2 16.79,15.57 17.06,15.86C17.38,16.2 17.56,16.66 17.56,17.16C17.56,18.46 16.5,19.5 15.21,19.5H15V22H12M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20V17.5C13.6,17.5 14.88,16.2 14.88,14.63C14.88,14.12 14.71,13.67 14.43,13.34C14.11,12.96 13.91,12.47 13.91,11.95C13.91,10.63 15,9.57 16.33,9.57C16.85,9.57 17.31,9.75 17.65,10.05C17.97,10.32 18.4,10.5 18.88,10.5C20.14,10.5 21.16,9.47 21.16,8.21C21.16,4.78 17.05,4 12,4M6.5,10C5.67,10 5,9.33 5,8.5C5,7.67 5.67,7 6.5,7C7.33,7 8,7.67 8,8.5C8,9.33 7.33,10 6.5,10M9.5,6C8.67,6 8,5.33 8,4.5C8,3.67 8.67,3 9.5,3C10.33,3 11,3.67 11,4.5C11,5.33 10.33,6 9.5,6M14.5,6C13.67,6 13,5.33 13,4.5C13,3.67 13.67,3 14.5,3C15.33,3 16,3.67 16,4.5C16,5.33 15.33,6 14.5,6Z"/></svg>
+            <button type="button" class="icon-btn" id="settings-btn" aria-label="设置" title="设置">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12,22C6.49,22 2,17.51 2,12C2,6.49 6.49,2 12,2C17.51,2 22,6.49 22,12C22,13.1 21.1,14 20,14C19.66,14 19.34,13.88 19.09,13.66C18.84,13.43 18.5,13.29 18.12,13.29C17.29,13.29 16.63,13.96 16.63,14.79C16.63,15.2 16.79,15.57 17.06,15.86C17.38,16.2 17.56,16.66 17.56,17.16C17.56,18.46 16.5,19.5 15.21,19.5H15V22H12M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20V17.5C13.6,17.5 14.88,16.2 14.88,14.63C14.88,14.12 14.71,13.67 14.43,13.34C14.11,12.96 13.91,12.47 13.91,11.95C13.91,10.63 15,9.57 16.33,9.57C16.85,9.57 17.31,9.75 17.65,10.05C17.97,10.32 18.4,10.5 18.88,10.5C20.14,10.5 21.16,9.47 21.16,8.21C21.16,4.78 17.05,4 12,4M6.5,10C5.67,10 5,9.33 5,8.5C5,7.67 5.67,7 6.5,7C7.33,7 8,7.67 8,8.5C8,9.33 7.33,10 6.5,10M9.5,6C8.67,6 8,5.33 8,4.5C8,3.67 8.67,3 9.5,3C10.33,3 11,3.67 11,4.5C11,5.33 10.33,6 9.5,6M14.5,6C13.67,6 13,5.33 13,4.5C13,3.67 13.67,3 14.5,3C15.33,3 16,3.67 16,4.5C16,5.33 15.33,6 14.5,6Z"/></svg>
+            </button>
+            <div class="nav-menu" role="tablist">
+                <button type="button" class="nav-item" role="tab" data-tab="pomodoro">番茄钟</button>
+                <button type="button" class="nav-item active" role="tab" data-tab="clock" aria-selected="true">时钟</button>
+                <button type="button" class="nav-item" role="tab" data-tab="timer">计时器</button>
             </div>
-            <div class="nav-menu">
-                <span class="nav-item" onclick="switchTab('pomodoro')">番茄钟</span>
-                <span class="nav-item active" onclick="switchTab('clock')">时钟</span>
-                <span class="nav-item" onclick="switchTab('timer')">计时器</span>
-            </div>
-            <div class="spacer"></div> 
+            <div class="spacer"></div>
         </div>
 
         <div id="card-probe"></div><div id="gap-probe"></div>
 
         <div class="view-container active" id="view-clock">
             <div class="v-above">
-                <div class="date-display" id="date-display">日期加载中...</div>
+                <div class="date-display" id="date-display">&nbsp;</div>
             </div>
             <div class="clock-container" id="clock-dom"></div>
             <div class="v-below">
-                <div class="quote" id="quote-text" contenteditable="true" spellcheck="false" title="点击编辑">心态代表风水</div>
+                <div class="quote" id="quote-text" contenteditable="plaintext-only" spellcheck="false" enterkeyhint="done" data-placeholder="写一句话" title="点击编辑" aria-label="签名，点击编辑">心态代表风水</div>
             </div>
         </div>
 
         <div class="view-container" id="view-pomodoro">
             <div class="v-above">
-                <div class="date-display" style="color: transparent; user-select: none;">占位</div>
+                <div class="sub-tab-container" id="pomo-tabs">
+                    <button type="button" class="sub-tab active" data-phase="focus">专注</button>
+                    <button type="button" class="sub-tab" data-phase="break">休息</button>
+                </div>
             </div>
             <div class="clock-container" id="pomo-dom"></div>
             <div class="v-below">
                 <div class="btn-group">
-                    <button class="btn-apple" id="pomodoro-btn" onclick="togglePomodoro()">开始专注</button>
-                    <button class="btn-apple" onclick="resetPomodoro()">重置</button>
+                    <button type="button" class="btn-apple" id="pomodoro-btn">开始专注</button>
+                    <button type="button" class="btn-apple" id="pomodoro-reset">重置</button>
                 </div>
             </div>
         </div>
 
         <div class="view-container" id="view-timer">
             <div class="v-above">
-            <div class="sub-tab-container">
-                <div class="sub-tab active" onclick="setTimerMode('up', this)">正计时</div>
-                <div class="sub-tab" onclick="setTimerMode('down', this)">倒计时</div>
-            </div>
-            
-            <div class="time-input-group" id="countdown-inputs" style="display: none;">
-                <input type="number" id="cd-h" class="time-input" min="0" max="99" value="0"> <span class="time-label">时</span>
-                <input type="number" id="cd-m" class="time-input" min="0" max="59" value="0"> <span class="time-label">分</span>
-                <input type="number" id="cd-s" class="time-input" min="0" max="59" value="0"> <span class="time-label">秒</span>
-                <button class="btn-apple" style="padding: 6px 15px; margin-left: 5px;" onclick="applyCountdown()">设定</button>
-            </div>
+                <div class="sub-tab-container" id="timer-tabs">
+                    <button type="button" class="sub-tab active" data-mode="up">正计时</button>
+                    <button type="button" class="sub-tab" data-mode="down">倒计时</button>
+                </div>
+                <!-- 输入即生效（以前要先点"设定"，不点直接开始会立刻"时间到"） -->
+                <div class="time-input-group" id="countdown-inputs" style="display: none;">
+                    <input type="number" id="cd-h" class="time-input" inputmode="numeric" min="0" max="99" value="0" aria-label="小时"> <span class="time-label">时</span>
+                    <input type="number" id="cd-m" class="time-input" inputmode="numeric" min="0" max="59" value="0" aria-label="分钟"> <span class="time-label">分</span>
+                    <input type="number" id="cd-s" class="time-input" inputmode="numeric" min="0" max="59" value="0" aria-label="秒"> <span class="time-label">秒</span>
+                </div>
             </div>
 
             <div class="clock-container" id="timer-dom"></div>
 
             <div class="v-below">
                 <div class="btn-group">
-                    <button class="btn-apple" id="timer-btn" onclick="toggleTimer()">开始</button>
-                    <button class="btn-apple" onclick="resetTimer()">重置</button>
-                    <button class="btn-apple" id="timer-clear-btn" style="display: none;" onclick="clearTimer()">清除</button>
+                    <button type="button" class="btn-apple" id="timer-btn">开始</button>
+                    <button type="button" class="btn-apple" id="timer-reset">重置</button>
+                    <button type="button" class="btn-apple" id="timer-clear-btn" style="display: none;">清除</button>
                 </div>
             </div>
         </div>
 
-        <div class="top-bar bottom-bar-wrap" style="margin-top: auto; padding-bottom: clamp(10px, 3vh, 30px);">
-            <div style="display: flex; gap: 10px;">
-                <div class="icon-btn" id="fullscreen-btn" title="全屏沉浸模式">
-                    <svg viewBox="0 0 24 24"><path d="M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z"/></svg>
-                </div>
-                <div class="icon-btn" id="rotate-btn" title="强制横屏模式">
-                    <svg viewBox="0 0 24 24"><path d="M13,4.07V1L8.45,5.55L13,10V6.09C15.84,6.57 18,9.03 18,12C18,14.97 15.84,17.43 13,17.91V19.93C16.95,19.43 20,16.04 20,12C20,7.96 16.95,4.57 13,4.07M7.1,18.32C8.26,19.22 9.61,19.76 11,19.93V17.9C10.13,17.75 9.29,17.41 8.54,16.87L7.1,18.32M6.09,13H4.07C4.24,14.39 4.79,15.73 5.69,16.89L7.1,15.47C6.58,14.72 6.23,13.88 6.09,13M7.11,8.53L5.7,7.11C4.8,8.27 4.24,9.61 4.07,11H6.09C6.23,10.13 6.58,9.28 7.11,8.53Z"/></svg>
-                </div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+        <div class="top-bar bottom-bar-wrap">
+            <div class="icon-group">
+                <button type="button" class="icon-btn" id="fullscreen-btn" aria-label="沉浸模式" title="沉浸模式（F）">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="rotate-btn" aria-label="强制横屏" title="强制横屏模式">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13,4.07V1L8.45,5.55L13,10V6.09C15.84,6.57 18,9.03 18,12C18,14.97 15.84,17.43 13,17.91V19.93C16.95,19.43 20,16.04 20,12C20,7.96 16.95,4.57 13,4.07M7.1,18.32C8.26,19.22 9.61,19.76 11,19.93V17.9C10.13,17.75 9.29,17.41 8.54,16.87L7.1,18.32M6.09,13H4.07C4.24,14.39 4.79,15.73 5.69,16.89L7.1,15.47C6.58,14.72 6.23,13.88 6.09,13M7.11,8.53L5.7,7.11C4.8,8.27 4.24,9.61 4.07,11H6.09C6.23,10.13 6.58,9.28 7.11,8.53Z"/></svg>
+                </button>
             </div>
-            <div style="width: 98px; pointer-events: none;"></div>
         </div>
 
-        <div class="modal-overlay" id="theme-modal" onclick="if(event.target===this) this.classList.remove('active')">
+        <div class="modal-overlay" id="theme-modal" role="dialog" aria-modal="true" aria-label="设置">
             <div class="modal-content">
-                <h3 style="color:var(--ui-text-active); text-align:center; margin-bottom:20px; font-weight: 500;">外观设置</h3>
+                <h3 class="modal-title">设置</h3>
+                <div class="modal-label">外观</div>
                 <div class="theme-grid">
-                    <div class="theme-card" style="background-color: #141414;" onclick="applyTheme('#000000', '#141414', '#f0f0f0', false)">
-                        <span style="font-family:'Oswald', sans-serif; font-size: 32px; color: #f0f0f0; font-weight:600;">12:00</span><br><span style="color: #888888; font-size:12px;">暗夜经典</span>
-                    </div>
-                    <div class="theme-card" style="background-color: #ffffff;" onclick="applyTheme('#f5f5f7', '#ffffff', '#1d1d1f', true)">
-                        <span style="font-family:'Oswald', sans-serif; font-size: 32px; color: #1d1d1f; font-weight:600;">12:00</span><br><span style="color: #888888; font-size:12px;">晨曦极简</span>
-                    </div>
+                    <button type="button" class="theme-card" data-theme="dark" style="background-color: #141414;">
+                        <span class="sample" style="color: #f0f0f0;">12:00</span><span class="name">暗夜经典</span>
+                    </button>
+                    <button type="button" class="theme-card" data-theme="light" style="background-color: #ffffff;">
+                        <span class="sample" style="color: #1d1d1f;">12:00</span><span class="name">晨曦极简</span>
+                    </button>
                 </div>
+                <div class="modal-label">番茄钟时长</div>
+                <div class="setting-row">
+                    <span class="time-label">专注</span><input type="number" id="set-focus" class="time-input" inputmode="numeric" min="1" max="99" aria-label="专注分钟数"><span class="time-label">分钟</span>
+                    <span class="time-label" style="margin-left: 12px;">休息</span><input type="number" id="set-break" class="time-input" inputmode="numeric" min="1" max="60" aria-label="休息分钟数"><span class="time-label">分钟</span>
+                </div>
+                <p class="modal-hint">计时进行中会保持屏幕常亮（浏览器支持时）。空格键：开始/暂停　F：沉浸模式　Esc：关闭</p>
             </div>
         </div>
-    </div> 
+    </div>
 
     <script>
+        const $ = id => document.getElementById(id);
+        // localStorage 在部分隐私模式/内嵌浏览器里会直接抛错，一处抛错会让后面整段脚本都不跑
+        const store = {
+            get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+            set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+            json(k) { try { return JSON.parse(localStorage.getItem(k)) || null; } catch (e) { return null; } },
+            setJson(k, v) { store.set(k, JSON.stringify(v)); }
+        };
+        const clampInt = (v, lo, hi) => { const n = parseInt(v, 10); return Math.min(hi, Math.max(lo, isNaN(n) ? lo : n)); };
+        const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+        let isImmersiveMode = false;   // 放最前面：重开页面时若计时已结束，结算流程会马上用到它
+
         /* ================= 1. 结构生成 ================= */
         function createCardGroup(prefix) {
-            return `
-            <div class="clock-group">
-                <div class="flip-digit" id="${prefix}1">
+            const digit = n => `
+                <div class="flip-digit" id="${prefix}${n}">
                     <div class="half top static"><span>0</span></div><div class="half bottom static"><span>0</span></div>
                     <div class="half top flip"><span>0</span></div><div class="half bottom flip"><span>0</span></div>
-                </div>
-                <div class="flip-digit" id="${prefix}2">
-                    <div class="half top static"><span>0</span></div><div class="half bottom static"><span>0</span></div>
-                    <div class="half top flip"><span>0</span></div><div class="half bottom flip"><span>0</span></div>
-                </div>
-            </div>`;
+                </div>`;
+            return `<div class="clock-group">${digit(1)}${digit(2)}</div>`;
         }
 
-        document.getElementById('clock-dom').innerHTML = createCardGroup('c-h') + createCardGroup('c-m') + createCardGroup('c-s');
-        document.getElementById('pomo-dom').innerHTML = createCardGroup('p-m') + createCardGroup('p-s');
-        document.getElementById('timer-dom').innerHTML = createCardGroup('t-h') + createCardGroup('t-m') + createCardGroup('t-s');
+        $('clock-dom').innerHTML = createCardGroup('c-h') + createCardGroup('c-m') + createCardGroup('c-s');
+        $('pomo-dom').innerHTML = createCardGroup('p-m') + createCardGroup('p-s');
+        $('timer-dom').innerHTML = createCardGroup('t-h') + createCardGroup('t-m') + createCardGroup('t-s');
 
         /* ================= 2. 核心翻转逻辑 ================= */
-        function flipSingleDigit(id, newValue) {
-            const el = document.getElementById(id);
+        const FLIP_MS = 250;
+        // animate=false：直接换数字（视图没显示、或用户开了"减少动态效果"）
+        function flipSingleDigit(id, newValue, animate) {
+            const el = $(id);
             if (!el) return;
-            
-            const topStatic = el.querySelector('.top.static span');
-            const bottomStatic = el.querySelector('.bottom.static span');
-            const topFlip = el.querySelector('.top.flip');
-            const topFlipInner = topFlip.querySelector('span');
-            const bottomFlip = el.querySelector('.bottom.flip');
-            const bottomFlipInner = bottomFlip.querySelector('span');
+            const p = el._p || (el._p = {
+                topStatic: el.querySelector('.top.static span'), bottomStatic: el.querySelector('.bottom.static span'),
+                topFlip: el.querySelector('.top.flip'), bottomFlip: el.querySelector('.bottom.flip')
+            });
+            newValue = String(newValue);
+            const currentVal = p.topStatic.textContent;
+            if (currentVal === newValue) return;
 
-            const currentVal = topStatic.textContent;
-            if (currentVal === String(newValue)) return;
+            // 上一次翻页还没播完就来了新值：先作废它的两个回调，否则旧回调会掐断新动画、
+            // 还会把下半张写回旧数字（实测：7→8 连翻时第 520ms 下半张闪出 7）
+            clearTimeout(el._t1); clearTimeout(el._t2);
+            p.topFlip.classList.remove('flip-anim-top');
+            p.bottomFlip.classList.remove('flip-anim-bottom');
 
-            topFlipInner.textContent = currentVal; 
-            bottomFlipInner.textContent = newValue; 
-            topStatic.textContent = newValue;
+            if (!animate || reduceMotion.matches) {
+                p.topStatic.textContent = p.bottomStatic.textContent = newValue;
+                return;
+            }
+            p.bottomStatic.textContent = currentVal;              // 被打断时下半张补齐成"当前这张"，牌面才是完整的
+            p.topFlip.firstChild.textContent = currentVal;
+            p.bottomFlip.firstChild.textContent = newValue;
+            p.topStatic.textContent = newValue;
 
-            topFlip.classList.remove('flip-anim-top');
-            bottomFlip.classList.remove('flip-anim-bottom');
-            void el.offsetWidth; 
-            topFlip.classList.add('flip-anim-top');
-
-            setTimeout(() => {
-                topFlip.classList.remove('flip-anim-top');
-                bottomFlip.classList.add('flip-anim-bottom');
-                setTimeout(() => {
-                    bottomStatic.textContent = newValue;
-                    bottomFlip.classList.remove('flip-anim-bottom');
-                }, 250);
-            }, 250);
+            void el.offsetWidth;
+            p.topFlip.classList.add('flip-anim-top');
+            el._t1 = setTimeout(() => {
+                p.topFlip.classList.remove('flip-anim-top');
+                p.bottomFlip.classList.add('flip-anim-bottom');
+                el._t2 = setTimeout(() => {
+                    p.bottomStatic.textContent = newValue;
+                    p.bottomFlip.classList.remove('flip-anim-bottom');
+                }, FLIP_MS);
+            }, FLIP_MS);
         }
 
-        function setTimePair(prefix, timeValue) {
+        function setTimePair(prefix, timeValue, animate) {
             const strVal = String(timeValue).padStart(2, '0');
-            flipSingleDigit(prefix + '1', strVal[0]); 
-            flipSingleDigit(prefix + '2', strVal[1]); 
+            flipSingleDigit(prefix + '1', strVal[0], animate);
+            flipSingleDigit(prefix + '2', strVal[1], animate);
+        }
+        const isShown = viewId => $('view-' + viewId).classList.contains('active');
+
+        /* ================= 3. 农历（香港天文台数据表，不用浏览器内置历法） =================
+           浏览器内置的 Intl chinese 历法在 1901-2100 有 12 段临界日算错，最近的是 2027-02-06
+           （春节当天会显示成"腊月三十"）。数据表与换算逻辑取自 fjkkx77/data-Calculation，
+           用香港天文台《公曆與農曆日期對照表》逐日生成并全区间比对过。
+           每个数字：bit0-3 闰月号(0=无)，bit4-16 各月大小(1=30天)，bit17-22 正月初一距 1月1日的天数 */
+        const LUNAR_TABLE = [
+            0x627520,0x4cea50,0x3964a5,0x5c64b0,0x44a9b0,0x315564,0x5656a0,0x40b590,0x2b7522,0x507520,
+            0x3bb256,0x60b250,0x48a4b0,0x334ab5,0x582ad0,0x4256b0,0x2cb692,0x52da90,0x3fd927,0x64e920,
+            0x4cd250,0x37a4d5,0x5ca560,0x462b60,0x2f5b54,0x566d40,0x40ea90,0x2de922,0x50e920,0x3ad266,
+            0x5e52b0,0x48a570,0x332b65,0x58b5a0,0x446d40,0x2eec93,0x527490,0x3d6937,0x62a930,0x4c52b0,
+            0x34a5b6,0x5aaad0,0x4656a0,0x31b554,0x56ba40,0x40b490,0x2ba932,0x50a950,0x3952d7,0x5e5360,
+            0x48aad0,0x355aa5,0x585b20,0x42da50,0x2fd4a3,0x54d4a0,0x3ca958,0x60a970,0x4c5560,0x36ab56,
+            0x5aad50,0x466d20,0x30ea54,0x56ea50,0x4064a0,0x28c973,0x4ea9b0,0x3b55a7,0x5e56a0,0x48b690,
+            0x357525,0x5ab520,0x42b250,0x2d64b4,0x52a4b0,0x3d4ab8,0x602ad0,0x4a56d0,0x36b696,0x5cda90,
+            0x46d920,0x31d254,0x56d250,0x41a4da,0x64a560,0x4e2b60,0x385b56,0x5e6d50,0x48ea90,0x35e925,
+            0x5ae920,0x44d260,0x2ca563,0x50a570,0x3d4d68,0x6235a0,0x4a6d50,0x376c95,0x5c7490,0x466930,
+            0x2f52b4,0x5452b0,0x3ea5b0,0x2b55a2,0x4e56a0,0x39b557,0x60ba40,0x4ab490,0x33a935,0x58a950,
+            0x4252d0,0x2caad4,0x50ab50,0x3d5aa9,0x625d20,0x4cda50,0x37d4a6,0x5cd4a0,0x46c950,0x3152e4,
+            0x545560,0x3eab50,0x2b5b22,0x506d20,0x38ea56,0x5e7250,0x4864b0,0x32c975,0x56cab0,0x4255a0,
+            0x2cad63,0x52b690,0x3d752b,0x62b520,0x4cb250,0x37a4b6,0x5aa4b0,0x444ab0,0x2e55b5,0x545ad0,
+            0x3eb6a0,0x2bb522,0x50d920,0x3bd257,0x5ed250,0x48a550,0x334ad5,0x584b60,0x405b50,0x2cdaa3,
+            0x52ec90,0x3fe928,0x62e920,0x4cd260,0x36a566,0x5aa570,0x445560,0x2e6d54,0x547550,0x407490,
+            0x28e933,0x4e6930,0x3952b7,0x5e52b0,0x46a5b0,0x3355a5,0x5856a0,0x42b650,0x2d74a4,0x52b4a0,
+            0x3da958,0x62a950,0x4a52d0,0x34aad6,0x5aab50,0x465aa0,0x2eba54,0x54da50,0x40d4a0,0x2bc953,
+            0x4ec960,0x3994e7,0x5e5560,0x48ab50,0x335b25,0x586d20,0x42ea50,0x2ee4a4,0x5068b0,0x3ac978,
+            0x604ab0,0x4a55b0,0x34ad66,0x5ab6a0,0x467520,0x317254,0x54b450,0x3ea8b0,0x2949b2,0x4e4ab0
+        ];
+        const LUNAR_MIN_YEAR = 1901, MS_PER_DAY = 86400000;
+        function getLunarYearInfo(ly) {
+            const raw = LUNAR_TABLE[ly - LUNAR_MIN_YEAR];
+            if (raw === undefined) return null;
+            const leapMonth = raw & 0xF, sizeBits = (raw >> 4) & 0x1FFF, newYearOffset = (raw >> 17) & 0x3F;
+            const days = [];
+            for (let i = 0; i < (leapMonth ? 13 : 12); i++) days.push(((sizeBits >> i) & 1) ? 30 : 29);
+            return { leapMonth, monthDays: days, newYearMs: Date.UTC(ly, 0, 1) + newYearOffset * MS_PER_DAY };
+        }
+        function solarToLunar(y, m, d) {
+            const ms = Date.UTC(y, m - 1, d);
+            let info = getLunarYearInfo(y);
+            if (!info || ms < info.newYearMs) info = getLunarYearInfo(y - 1);
+            if (!info || ms < info.newYearMs) return null;
+            let offset = Math.round((ms - info.newYearMs) / MS_PER_DAY), idx = 0;
+            while (idx < info.monthDays.length && offset >= info.monthDays[idx]) { offset -= info.monthDays[idx]; idx++; }
+            if (idx >= info.monthDays.length) return null;
+            if (!info.leapMonth || idx < info.leapMonth) return { month: idx + 1, isLeap: false, day: offset + 1 };
+            if (idx === info.leapMonth) return { month: info.leapMonth, isLeap: true, day: offset + 1 };
+            return { month: idx, isLeap: false, day: offset + 1 };
+        }
+        // 返回「八月廿八」这种写法；超出 1901-2100 返回空字符串，不外推
+        function lunarText(date) {
+            const l = solarToLunar(date.getFullYear(), date.getMonth() + 1, date.getDate());
+            if (!l) return '';
+            const M = ['正','二','三','四','五','六','七','八','九','十','冬','腊'];
+            const D = l.day === 10 ? '初十' : l.day === 20 ? '二十' : l.day === 30 ? '三十'
+                : ['初','十','廿','三'][Math.floor(l.day / 10)] + '〇一二三四五六七八九'[l.day % 10];
+            return (l.isLeap ? '闰' : '') + M[l.month - 1] + '月' + D;
         }
 
-        /* ================= 3. 高精度时钟 ================= */
+        /* ================= 4. 时钟 ================= */
+        let lastDateKey = '';
         function updateClock() {
             const now = new Date();
-            setTimePair('c-h', now.getHours());
-            setTimePair('c-m', now.getMinutes());
-            setTimePair('c-s', now.getSeconds());
+            const anim = isShown('clock');
+            setTimePair('c-h', now.getHours(), anim);
+            setTimePair('c-m', now.getMinutes(), anim);
+            setTimePair('c-s', now.getSeconds(), anim);
 
-            const y = now.getFullYear(); const m = now.getMonth() + 1; const d = now.getDate();
-            const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-            
-            let lunarStr = "";
-            try {
-                const dateStr = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'numeric', day: 'numeric' }).format(now);
-                const nums = dateStr.match(/\d+/g);
-                const isLeap = dateStr.includes('闰');
-                if (nums && nums.length >= 2) {
-                    const lm = parseInt(nums[0]); const ld = parseInt(nums[1]);
-                    const monthMap = ['','正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','冬月','腊月'];
-                    const dayMap = ['','初一','初二','初三','初四','初五','初六','初七','初八','初九','初十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十'];
-                    lunarStr = (isLeap ? '闰' : '') + (monthMap[lm] || lm + '月') + (dayMap[ld] || ld);
-                }
-            } catch(e) { lunarStr = ""; }
-
-            document.getElementById('date-display').textContent = `${y}年${m}月${d}日 ${lunarStr} ${days[now.getDay()]}`;
+            const key = now.toDateString();
+            if (key !== lastDateKey) {       // 日期一天只变一次，不必每秒重算农历、重写文字
+                lastDateKey = key;
+                const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                $('date-display').textContent = [`${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`, lunarText(now), days[now.getDay()]].filter(Boolean).join(' ');
+            }
         }
 
         function syncClock() {
             updateClock();
-            const now = new Date();
-            const msToNextSecond = 1000 - now.getMilliseconds();
-            setTimeout(syncClock, msToNextSecond);
+            setTimeout(syncClock, 1000 - new Date().getMilliseconds());
         }
         syncClock();
 
-        /* ================= 4. 其他功能逻辑 ================= */
-        function switchTab(tabId) {
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            event.target.classList.add('active');
-            document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
-            document.getElementById(`view-${tabId}`).classList.add('active');
+        /* ================= 5. 提示、提醒音、常亮 ================= */
+        let toastTimer;
+        function toast(msg, ms) {
+            const t = $('toast');
+            t.textContent = msg; t.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove('show'), ms || 3500);
         }
 
-        const quoteEl = document.getElementById('quote-text');
-        if(localStorage.getItem('savedQuote')) quoteEl.textContent = localStorage.getItem('savedQuote');
-        quoteEl.addEventListener('input', function() { localStorage.setItem('savedQuote', this.textContent); });
+        // 提醒音用 Web Audio 现场合成（不用另放音频文件）。iOS 要求在一次点击里先"解锁"，
+        // 所以每次点开始时调一下 unlockAudio。注意：iPhone 静音键打开时 Web Audio 不出声，这是系统行为
+        let audioCtx = null;
+        function unlockAudio() {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+            } catch (e) {}
+        }
+        function beep() {
+            if (!audioCtx) return;
+            try {
+                const t0 = audioCtx.currentTime;
+                for (let i = 0; i < 3; i++) {
+                    const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = t0 + i * 0.32;
+                    o.type = 'sine'; o.frequency.value = 880;
+                    g.gain.setValueAtTime(0.0001, t);
+                    g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+                    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+                    o.connect(g); g.connect(audioCtx.destination);
+                    o.start(t); o.stop(t + 0.25);
+                }
+            } catch (e) {}
+        }
+        function alertDone(domId, msg) {
+            beep();
+            try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+            toast(msg, 6000);
+            const c = $(domId);
+            c.classList.remove('ring'); void c.offsetWidth; c.classList.add('ring');
+            setTimeout(() => c.classList.remove('ring'), 4200);
+        }
 
-        let pTime = 25 * 60, pTimer = null, isPRun = false;
-        function updatePomo() { setTimePair('p-m', Math.floor(pTime / 60)); setTimePair('p-s', pTime % 60); }
-        updatePomo();
-        
-        function togglePomodoro() {
-            const btn = document.getElementById('pomodoro-btn');
-            if (isPRun) { 
-                clearInterval(pTimer); btn.textContent = "继续专注"; 
-                btn.style.backgroundColor = ''; btn.style.color = ''; btn.style.borderColor = '';
-            } else { 
-                pTimer = setInterval(() => { if (pTime > 0) { pTime--; updatePomo(); } else clearInterval(pTimer); }, 1000);
-                btn.textContent = "暂停专注"; 
-                btn.style.backgroundColor = "rgba(255,159,10,0.15)"; btn.style.color = "#ff9f0a"; btn.style.borderColor = "rgba(255,159,10,0.3)";
+        // 屏幕常亮：沉浸模式、番茄钟/倒计时进行中时申请（计时结束提醒要靠页面醒着才能按时响）。
+        // 页面切到后台时系统会自动释放，回到前台要重新申请
+        let wakeLock = null, wakePending = false;
+        async function syncWakeLock() {
+            if (!('wakeLock' in navigator)) return;
+            const want = (isImmersiveMode || pomo.running || cd.running) && document.visibilityState === 'visible';
+            if (want && !wakeLock && !wakePending) {
+                wakePending = true;
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => { wakeLock = null; });
+                } catch (e) { wakeLock = null; }
+                wakePending = false;
+                if (!((isImmersiveMode || pomo.running || cd.running))) syncWakeLock();   // 申请期间状态又变了
+            } else if (!want && wakeLock) {
+                const w = wakeLock; wakeLock = null;
+                w.release().catch(() => {});
             }
-            isPRun = !isPRun;
         }
 
+        /* ================= 6. 番茄钟 / 计时器 =================
+           一律按"真实时间"算：记下结束时刻（或开始时刻），每次刷新用 Date.now() 推剩余。
+           以前是 setInterval 每次 ±1 秒，页面一被挂起（iPhone 锁屏、切到别的 App）就停表——
+           实测冻结 7.1 秒番茄钟只走了 1 秒。状态存进 localStorage，刷新/重开页面也接得上。 */
+        const MAX_MS = (99 * 3600 + 59 * 60 + 59) * 1000;
+        const settings = {
+            focusMin: clampInt(store.get('focusMin', 25), 1, 99),
+            breakMin: clampInt(store.get('breakMin', 5), 1, 60)
+        };
+        const phaseMs = phase => (phase === 'focus' ? settings.focusMin : settings.breakMin) * 60000;
+
+        let pomo = Object.assign({ phase: 'focus', running: false, endAt: 0, remainMs: phaseMs('focus') }, store.json('pomoState') || {});
+        let sw = Object.assign({ running: false, startAt: 0, baseMs: 0 }, store.json('swState') || {});
+        let cd = Object.assign({ running: false, endAt: 0, remainMs: 0, targetMs: 0, done: false }, store.json('cdState') || {});
+        let timerMode = store.get('timerMode', 'up') === 'down' ? 'down' : 'up';
+        const savePomo = () => store.setJson('pomoState', { phase: pomo.phase, running: pomo.running, endAt: pomo.endAt, remainMs: pomo.remainMs });
+        const saveSw = () => store.setJson('swState', sw);
+        const saveCd = () => store.setJson('cdState', cd);
+
+        const pomoLeft = () => pomo.running ? Math.max(0, pomo.endAt - Date.now()) : pomo.remainMs;
+        const swElapsed = () => Math.min(MAX_MS, sw.running ? sw.baseMs + Date.now() - sw.startAt : sw.baseMs);
+        const cdLeft = () => cd.running ? Math.max(0, cd.endAt - Date.now()) : cd.remainMs;
+
+        function setBtn(btn, text, state) {
+            btn.textContent = text;
+            btn.classList.remove('is-running', 'is-paused', 'is-done');
+            if (state) btn.classList.add('is-' + state);
+        }
+
+        function renderPomo(animate) {
+            const s = Math.ceil(pomoLeft() / 1000);
+            const a = animate !== false && isShown('pomodoro');
+            setTimePair('p-m', Math.floor(s / 60), a); setTimePair('p-s', s % 60, a);
+            const name = pomo.phase === 'focus' ? '专注' : '休息';
+            const btn = $('pomodoro-btn');
+            if (pomo.running) setBtn(btn, '暂停', 'running');
+            else if (pomo.remainMs < phaseMs(pomo.phase)) setBtn(btn, '继续' + name, 'paused');
+            else setBtn(btn, '开始' + name);
+            document.querySelectorAll('#pomo-tabs .sub-tab').forEach(t => {
+                t.classList.toggle('active', t.dataset.phase === pomo.phase);
+                t.setAttribute('aria-disabled', pomo.running ? 'true' : 'false');
+            });
+        }
+
+        function renderTimer(animate) {
+            const ms = timerMode === 'up' ? swElapsed() : cdLeft();
+            const s = timerMode === 'up' ? Math.floor(ms / 1000) : Math.ceil(ms / 1000);
+            const a = animate !== false && isShown('timer');
+            setTimePair('t-h', Math.floor(s / 3600), a); setTimePair('t-m', Math.floor((s % 3600) / 60), a); setTimePair('t-s', s % 60, a);
+            const btn = $('timer-btn');
+            if (timerMode === 'up') {
+                if (sw.running) setBtn(btn, '暂停', 'running');
+                else if (sw.baseMs >= MAX_MS) setBtn(btn, '已到上限', 'done');
+                else setBtn(btn, sw.baseMs > 0 ? '继续' : '开始', sw.baseMs > 0 ? 'paused' : '');
+            } else {
+                if (cd.running) setBtn(btn, '暂停', 'running');
+                else if (cd.done) setBtn(btn, '时间到', 'done');
+                else setBtn(btn, cd.remainMs < cd.targetMs ? '继续' : '开始', cd.remainMs < cd.targetMs ? 'paused' : '');
+            }
+            document.querySelectorAll('#timer-tabs .sub-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === timerMode));
+            $('countdown-inputs').style.display = timerMode === 'down' ? 'flex' : 'none';
+            $('timer-clear-btn').style.display = timerMode === 'down' ? '' : 'none';
+            ['cd-h', 'cd-m', 'cd-s'].forEach(id => { $(id).disabled = cd.running; });
+        }
+
+        let lastDoneAt = 0;   // 标题上的"时间到"挂一分钟就撤，别一直占着标签页
+        function fmtTitle(ms, withHours) {
+            const s = Math.ceil(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+            const p = n => String(n).padStart(2, '0');
+            return (withHours || h ? h + ':' + p(m) : p(m)) + ':' + p(x);
+        }
+        // 标签页标题显示正在跑的计时，切到别的标签页也看得见
+        function updateTitle() {
+            let t = '翻页时钟';
+            if (pomo.running) t = `${fmtTitle(pomoLeft())} ${pomo.phase === 'focus' ? '专注' : '休息'} · 翻页时钟`;
+            else if (cd.running) t = `⏳ ${fmtTitle(cdLeft(), true)} · 翻页时钟`;
+            else if (Date.now() - lastDoneAt < 60000) t = '⏰ 时间到 · 翻页时钟';
+            if (document.title !== t) document.title = t;
+        }
+
+        function finishPomo() {
+            const wasFocus = pomo.phase === 'focus';
+            pomo.running = false;
+            pomo.phase = wasFocus ? 'break' : 'focus';
+            pomo.remainMs = phaseMs(pomo.phase);
+            savePomo();
+            lastDoneAt = Date.now(); setTimeout(updateTitle, 60500);
+            alertDone('pomo-dom', wasFocus ? `专注 ${settings.focusMin} 分钟完成，休息一下` : '休息结束，开始下一轮专注吧');
+            syncWakeLock();
+        }
+        function finishCd() {
+            cd.running = false; cd.done = true; cd.remainMs = 0;
+            saveCd();
+            lastDoneAt = Date.now(); setTimeout(updateTitle, 60500);
+            alertDone('timer-dom', '倒计时结束');
+            syncWakeLock();
+        }
+
+        let ticker = null;
+        function tick() {
+            if (pomo.running && pomoLeft() <= 0) finishPomo();
+            if (cd.running && cdLeft() <= 0) finishCd();
+            if (sw.running && swElapsed() >= MAX_MS) { sw.running = false; sw.baseMs = MAX_MS; saveSw(); toast('已到 99:59:59 上限，计时停止'); }
+            renderPomo(); renderTimer(); updateTitle();
+            if (!pomo.running && !sw.running && !cd.running) { clearInterval(ticker); ticker = null; }
+        }
+        function ensureTicker() { if (!ticker) ticker = setInterval(tick, 200); tick(); }
+
+        function togglePomodoro() {
+            if (pomo.running) {
+                pomo.remainMs = pomoLeft(); pomo.running = false;
+            } else {
+                unlockAudio();
+                pomo.endAt = Date.now() + pomo.remainMs; pomo.running = true;
+            }
+            savePomo(); ensureTicker(); syncWakeLock();
+        }
         function resetPomodoro() {
-            clearInterval(pTimer); isPRun = false; pTime = 25 * 60; updatePomo();
-            const btn = document.getElementById('pomodoro-btn');
-            btn.textContent = "开始专注"; btn.style.backgroundColor = ''; btn.style.color = ''; btn.style.borderColor = '';
+            pomo.running = false; pomo.remainMs = phaseMs(pomo.phase);
+            savePomo(); ensureTicker(); syncWakeLock();
+        }
+        function setPhase(phase) {
+            if (pomo.running) { toast('先暂停，再切换专注/休息'); return; }
+            pomo.phase = phase; pomo.remainMs = phaseMs(phase);
+            savePomo(); ensureTicker();
         }
 
-        let timerMode = 'up';
-        let tTime = 0, tTimer = null, isTRun = false, targetCdTime = 0;
-        
-        function updateTimer() { setTimePair('t-h', Math.floor(tTime/3600)); setTimePair('t-m', Math.floor((tTime%3600)/60)); setTimePair('t-s', tTime%60); }
-        
-        function setTimerMode(mode, el) {
-            timerMode = mode;
-            document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
-            el.classList.add('active');
-            document.getElementById('countdown-inputs').style.display = (mode === 'down') ? 'flex' : 'none';
-            document.getElementById('timer-clear-btn').style.display = (mode === 'down') ? 'block' : 'none';
-            resetTimer();
+        function readCdInputs() {
+            return (clampInt($('cd-h').value, 0, 99) * 3600 + clampInt($('cd-m').value, 0, 59) * 60 + clampInt($('cd-s').value, 0, 59)) * 1000;
         }
-
-        function applyCountdown() {
-            let h = parseInt(document.getElementById('cd-h').value) || 0;
-            let m = parseInt(document.getElementById('cd-m').value) || 0;
-            let s = parseInt(document.getElementById('cd-s').value) || 0;
-            targetCdTime = h * 3600 + m * 60 + s; tTime = targetCdTime; updateTimer();
+        function writeCdInputs(ms) {
+            const s = Math.round(ms / 1000);
+            $('cd-h').value = Math.floor(s / 3600); $('cd-m').value = Math.floor((s % 3600) / 60); $('cd-s').value = s % 60;
+        }
+        // 输入框一改就生效（不再需要"设定"按钮）
+        function applyCdInputs() {
+            if (cd.running) return;
+            cd.targetMs = readCdInputs(); cd.remainMs = cd.targetMs; cd.done = false;
+            saveCd(); ensureTicker();
         }
 
         function toggleTimer() {
-            const btn = document.getElementById('timer-btn');
-            if (isTRun) { 
-                clearInterval(tTimer); btn.textContent = "继续"; 
-                btn.style.backgroundColor = "rgba(255,159,10,0.15)"; btn.style.color = "#ff9f0a"; btn.style.borderColor = "rgba(255,159,10,0.3)";
-            } else { 
-                tTimer = setInterval(() => { 
-                    if(timerMode === 'up') { tTime++; updateTimer(); } 
-                    else { if(tTime > 0) { tTime--; updateTimer(); } else { clearInterval(tTimer); isTRun = false; btn.textContent = "时间到"; } }
-                }, 1000);
-                btn.textContent = "暂停"; 
-                btn.style.backgroundColor = "rgba(255,59,48,0.15)"; btn.style.color = "#ff3b30"; btn.style.borderColor = "rgba(255,59,48,0.3)";
-            }
-            isTRun = !isTRun;
-        }
-
-        function resetTimer() { 
-            clearInterval(tTimer); isTRun = false; 
-            tTime = (timerMode === 'up') ? 0 : targetCdTime; updateTimer(); 
-            const btn = document.getElementById('timer-btn');
-            btn.textContent = "开始"; btn.style.backgroundColor = ''; btn.style.color = ''; btn.style.borderColor = '';
-        }
-
-        function clearTimer() {
-            clearInterval(tTimer); isTRun = false; 
-            document.getElementById('cd-h').value = 0; document.getElementById('cd-m').value = 0; document.getElementById('cd-s').value = 0;
-            targetCdTime = 0; tTime = 0; updateTimer(); 
-            const btn = document.getElementById('timer-btn');
-            btn.textContent = "开始"; btn.style.backgroundColor = ''; btn.style.color = ''; btn.style.borderColor = '';
-        }
-
-        function applyTheme(bg, card, text, isLightMode) {
-            document.documentElement.style.setProperty('--bg-color', bg);
-            document.documentElement.style.setProperty('--card-bg', card);
-            document.documentElement.style.setProperty('--text-color', text);
-            if (isLightMode) {
-                document.documentElement.style.setProperty('--ui-text', '#888888'); document.documentElement.style.setProperty('--ui-text-active', '#000000');
-                document.documentElement.style.setProperty('--split-line', 'rgba(0,0,0,0.1)');
-                document.documentElement.style.setProperty('--btn-bg', 'rgba(0,0,0,0.05)'); document.documentElement.style.setProperty('--btn-text', '#1d1d1f');
-                document.documentElement.style.setProperty('--btn-border', 'rgba(0,0,0,0.1)'); document.documentElement.style.setProperty('--btn-hover', 'rgba(0,0,0,0.1)');
-                document.documentElement.style.setProperty('--input-bg', 'rgba(0,0,0,0.03)'); document.documentElement.style.setProperty('--input-border', 'rgba(0,0,0,0.15)');
-                document.documentElement.style.setProperty('--input-text', '#1d1d1f'); document.documentElement.style.setProperty('--modal-content-bg', 'rgba(255, 255, 255, 0.95)');
+            if (timerMode === 'up') {
+                if (sw.running) { sw.baseMs = swElapsed(); sw.running = false; }
+                else if (sw.baseMs >= MAX_MS) { toast('已到上限，先点重置'); return; }
+                else { sw.startAt = Date.now(); sw.running = true; }
+                saveSw();
             } else {
-                document.documentElement.style.setProperty('--ui-text', '#888888'); document.documentElement.style.setProperty('--ui-text-active', '#ffffff');
-                document.documentElement.style.setProperty('--split-line', '#000000');
-                document.documentElement.style.setProperty('--btn-bg', 'rgba(255,255,255,0.08)'); document.documentElement.style.setProperty('--btn-text', '#ffffff');
-                document.documentElement.style.setProperty('--btn-border', 'rgba(255,255,255,0.1)'); document.documentElement.style.setProperty('--btn-hover', 'rgba(255,255,255,0.15)');
-                document.documentElement.style.setProperty('--input-bg', 'rgba(255,255,255,0.05)'); document.documentElement.style.setProperty('--input-border', 'rgba(255,255,255,0.15)');
-                document.documentElement.style.setProperty('--input-text', '#ffffff'); document.documentElement.style.setProperty('--modal-content-bg', 'rgba(28, 28, 30, 0.9)');
+                if (cd.running) { cd.remainMs = cdLeft(); cd.running = false; }
+                else if (cd.done) { cd.done = false; cd.remainMs = cd.targetMs; }     // "时间到" 点一下 = 回到设定时长，准备再来一次
+                else {
+                    if (cd.remainMs <= 0) {
+                        applyCdInputs();
+                        if (cd.targetMs <= 0) { toast('先填写倒计时时长'); $('cd-m').focus(); return; }
+                    }
+                    unlockAudio();
+                    cd.endAt = Date.now() + cd.remainMs; cd.running = true;
+                }
+                saveCd();
             }
-            document.getElementById('theme-modal').classList.remove('active');
+            ensureTicker(); syncWakeLock();
+        }
+        function resetTimer() {
+            if (timerMode === 'up') { sw.running = false; sw.baseMs = 0; saveSw(); }
+            else { cd.running = false; cd.done = false; cd.remainMs = cd.targetMs; saveCd(); }
+            ensureTicker(); syncWakeLock();
+        }
+        function clearTimer() {
+            cd.running = false; cd.done = false; cd.targetMs = 0; cd.remainMs = 0;
+            writeCdInputs(0); saveCd(); ensureTicker(); syncWakeLock();
+        }
+        // 正计时、倒计时各跑各的：切换只是换个显示，不会把正在跑的那个清零（照 iPhone 时钟 App 的秒表/计时器）
+        function setTimerMode(mode) {
+            timerMode = mode; store.set('timerMode', mode);
+            renderTimer(false); queueFit();
         }
 
-        /* ================= 5. 沉浸模式 & 强制横屏智能修复 ================= */
+        $('pomodoro-btn').addEventListener('click', togglePomodoro);
+        $('pomodoro-reset').addEventListener('click', resetPomodoro);
+        document.querySelectorAll('#pomo-tabs .sub-tab').forEach(t => t.addEventListener('click', () => setPhase(t.dataset.phase)));
+        $('timer-btn').addEventListener('click', toggleTimer);
+        $('timer-reset').addEventListener('click', resetTimer);
+        $('timer-clear-btn').addEventListener('click', clearTimer);
+        document.querySelectorAll('#timer-tabs .sub-tab').forEach(t => t.addEventListener('click', () => setTimerMode(t.dataset.mode)));
+        ['cd-h', 'cd-m', 'cd-s'].forEach(id => {
+            const el = $(id);
+            el.addEventListener('input', applyCdInputs);
+            el.addEventListener('change', () => { writeCdInputs(readCdInputs()); applyCdInputs(); });   // 离开输入框时把 -5、75 这类值规范成合法值
+            el.addEventListener('focus', () => { try { el.select(); } catch (e) {} });
+        });
+        writeCdInputs(cd.targetMs);
+        renderPomo(false); renderTimer(false);
+        // 页面关着的时候计时可能已经结束了：重开后立刻结算一次
+        ensureTicker();
+
+        /* ================= 7. 标签切换、签名、主题、设置 ================= */
+        function switchTab(tabId) {
+            document.querySelectorAll('.nav-item').forEach(el => {
+                const on = el.dataset.tab === tabId;
+                el.classList.toggle('active', on);
+                el.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
+            $('view-' + tabId).classList.add('active');
+            store.set('tab', tabId);
+            queueFit();
+        }
+        document.querySelectorAll('.nav-item').forEach(el => el.addEventListener('click', () => switchTab(el.dataset.tab)));
+
+        const quoteEl = $('quote-text');
+        const QUOTE_MAX = 40;
+        // 用"是否存过"判断，而不是"存的是不是空"：以前清空签名后一刷新又变回默认那句
+        const savedQuote = store.get('savedQuote', null);
+        if (savedQuote !== null) quoteEl.textContent = savedQuote;
+        if (quoteEl.contentEditable !== 'plaintext-only') {
+            // 不支持 plaintext-only 的浏览器：自己拦下粘贴，只插入纯文本
+            quoteEl.contentEditable = 'true';
+            quoteEl.addEventListener('paste', e => {
+                e.preventDefault();
+                const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\s+/g, ' ');
+                document.execCommand('insertText', false, text);
+            });
+        }
+        quoteEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); quoteEl.blur(); } });
+        quoteEl.addEventListener('input', () => {
+            let t = quoteEl.textContent.replace(/[\r\n]+/g, ' ');
+            if (t.length > QUOTE_MAX) t = t.slice(0, QUOTE_MAX);
+            if (t !== quoteEl.textContent || (t === '' && quoteEl.innerHTML !== '')) {
+                quoteEl.textContent = t;
+                const r = document.createRange(); r.selectNodeContents(quoteEl); r.collapse(false);
+                const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+            }
+            store.set('savedQuote', t);
+        });
+        quoteEl.addEventListener('blur', () => { const t = quoteEl.textContent.trim(); if (t !== quoteEl.textContent) quoteEl.textContent = t; store.set('savedQuote', t); });
+
+        const modal = $('theme-modal');
+        function openSettings() {
+            $('set-focus').value = settings.focusMin; $('set-break').value = settings.breakMin;
+            document.querySelectorAll('.theme-card').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.theme === (document.documentElement.dataset.theme || 'dark'))));
+            modal.classList.add('active');
+        }
+        const closeSettings = () => modal.classList.remove('active');
+        $('settings-btn').addEventListener('click', openSettings);
+        modal.addEventListener('click', e => { if (e.target === modal) closeSettings(); });
+
+        function applyTheme(name) {
+            if (name === 'light') document.documentElement.dataset.theme = 'light';
+            else delete document.documentElement.dataset.theme;
+            store.set('theme', name);
+            document.querySelectorAll('.theme-card').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.theme === name)));
+        }
+        document.querySelectorAll('.theme-card').forEach(c => c.addEventListener('click', () => { applyTheme(c.dataset.theme); closeSettings(); }));
+
+        function applyDurations() {
+            // 改时长前先看这一轮是不是"还没开始"（剩余 = 整段）：是才换成新时长，暂停在半路的不动
+            const untouched = !pomo.running && pomo.remainMs === phaseMs(pomo.phase);
+            settings.focusMin = clampInt($('set-focus').value, 1, 99);
+            settings.breakMin = clampInt($('set-break').value, 1, 60);
+            store.set('focusMin', settings.focusMin); store.set('breakMin', settings.breakMin);
+            // 没在跑、也没暂停在半路时，换成新时长；正在进行的这一轮不受影响
+            if (untouched) { pomo.remainMs = phaseMs(pomo.phase); savePomo(); }
+            ensureTicker();
+        }
+        ['set-focus', 'set-break'].forEach(id => {
+            $(id).addEventListener('input', applyDurations);
+            $(id).addEventListener('change', () => { applyDurations(); $('set-focus').value = settings.focusMin; $('set-break').value = settings.breakMin; });
+            $(id).addEventListener('focus', e => { try { e.target.select(); } catch (er) {} });
+        });
+
+        /* ================= 8. 沉浸模式 & 强制横屏 ================= */
         const topBars = document.querySelectorAll('.top-bar');
         let idleTimer;
-        let isImmersiveMode = false;
 
         // 画框 = 页面实际铺满的那块屏幕区域。主体要对着它的正中，所以它必须量准：
         // - 没有浏览器界面时（从主屏幕打开 / 全屏），整个窗口就是画面 → 用 outerWidth × outerHeight。
@@ -592,8 +982,12 @@
             if (vv) return { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height, src: 'visualViewport' };
             return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight, src: 'inner' };
         }
+        // 正在输入时（签名、倒计时、设置里的时长）软键盘会把可视区域压矮，
+        // 如果跟着重量画框，整个时钟会在打字时缩小、跳动——输入期间先锁住画框，收起键盘再量
+        const isEditing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || a.tagName === 'INPUT'); };
         let frame = getFrame();
         function syncFrame() {
+            if (isEditing()) return;
             frame = getFrame();
             const s = document.documentElement.style;
             s.setProperty('--fx', frame.x + 'px'); s.setProperty('--fy', frame.y + 'px');
@@ -605,6 +999,7 @@
         document.addEventListener('fullscreenchange', syncFrame);
         document.addEventListener('webkitfullscreenchange', syncFrame);
         if (window.visualViewport) window.visualViewport.addEventListener('resize', syncFrame);
+        document.addEventListener('focusout', () => setTimeout(() => { syncFrame(); autoHideRotateBtn(); }, 50));
         syncFrame();
 
         function resetIdleTimer() {
@@ -630,9 +1025,10 @@
         function setImmersive(on) {
             isImmersiveMode = on;
             resetIdleTimer();
+            syncWakeLock();
         }
 
-        document.getElementById('fullscreen-btn').addEventListener('click', () => {
+        $('fullscreen-btn').addEventListener('click', () => {
             const docEl = document.documentElement;
             const nativeIsFull = document.fullscreenElement || document.webkitFullscreenElement;
 
@@ -644,6 +1040,7 @@
                     if (req && req.catch) req.catch(() => {});
                 } catch (e) { /* iPhone Safari / 微信 WKWebView 会直接抛错，忽略即可 */ }
                 setImmersive(true);
+                toast('沉浸模式：5 秒不操作自动隐藏按钮，再点一下全屏键退出', 3000);
             } else {
                 if (nativeIsFull) {
                     if (document.exitFullscreen) document.exitFullscreen();
@@ -660,32 +1057,51 @@
         document.addEventListener('fullscreenchange', checkFullscreenState);
         document.addEventListener('webkitfullscreenchange', checkFullscreenState);
 
-        // 强制横屏时包装器的宽高对调由 CSS 用 --fw/--fh 完成，这里只需重新量一次画框
-        const rotateBtn = document.getElementById('rotate-btn');
-        function updateLandscapeDimensions() { syncFrame(); }
-
+        // 强制横屏：用户的选择记下来（从主屏幕打开时不用每次再点）；手机真的横过来时自动让位，竖回去再恢复
+        const rotateBtn = $('rotate-btn');
+        let wantLandscape = store.get('forceLandscape', '0') === '1';
         rotateBtn.addEventListener('click', () => {
-            document.body.classList.toggle('force-landscape');
-            updateLandscapeDimensions();
-            resetIdleTimer();
+            wantLandscape = !document.body.classList.contains('force-landscape');
+            store.set('forceLandscape', wantLandscape ? '1' : '0');
+            document.body.classList.toggle('force-landscape', wantLandscape);
+            syncFrame(); queueFit(); resetIdleTimer();
         });
 
         function autoHideRotateBtn() {
-            if (window.innerWidth > window.innerHeight) {
-                rotateBtn.style.display = 'none';
-                document.body.classList.remove('force-landscape');
-            } else {
-                rotateBtn.style.display = 'flex';
-            }
-            updateLandscapeDimensions();
+            if (isEditing()) return;   // 安卓旧内核弹键盘会把 innerHeight 压矮，别误判成"横过来了"
+            const physicalLandscape = window.innerWidth > window.innerHeight;
+            rotateBtn.style.display = physicalLandscape ? 'none' : 'flex';
+            document.body.classList.toggle('force-landscape', !physicalLandscape && wantLandscape);
+            syncFrame();
         }
         window.addEventListener('resize', autoHideRotateBtn);
         autoHideRotateBtn(); // 初始化检测
 
-        /* ================= 6. 主体居中 + 按实测空间等比缩放 ================= */
-        const appWrapper = document.getElementById('app-wrapper');
-        const cardProbe = document.getElementById('card-probe');
-        const gapProbe = document.getElementById('gap-probe');
+        // 页面从挂起中恢复（锁屏回来、切回标签页、从后台缓存恢复）时立刻追上真实时间，不等下一次定时器。
+        // 只靠 visibilitychange 不够：页面被冻结再解冻时它不一定触发（实测 CDP 冻结恢复后只有 resume），要几个一起听
+        function catchUp() { updateClock(); ensureTicker(); syncWakeLock(); }   // 都是幂等的，多跑一次没有代价
+        document.addEventListener('visibilitychange', catchUp);
+        document.addEventListener('resume', catchUp);
+        window.addEventListener('pageshow', catchUp);
+        window.addEventListener('focus', catchUp);
+
+        // 键盘：空格 开始/暂停，F 沉浸模式，Esc 关设置/退出输入
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { if (modal.classList.contains('active')) closeSettings(); else if (isEditing()) document.activeElement.blur(); return; }
+            if (isEditing() || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key === ' ' || e.code === 'Space') {
+                if (e.target.closest && e.target.closest('button')) return;   // 焦点在按钮上时，空格本来就会点那个按钮
+                if (isShown('pomodoro')) { e.preventDefault(); togglePomodoro(); }
+                else if (isShown('timer')) { e.preventDefault(); toggleTimer(); }
+            } else if (e.key === 'f' || e.key === 'F') {
+                $('fullscreen-btn').click();
+            }
+        });
+
+        /* ================= 9. 主体居中 + 按实测空间等比缩放 ================= */
+        const appWrapper = $('app-wrapper');
+        const cardProbe = $('card-probe');
+        const gapProbe = $('gap-probe');
         const topBarEl = document.querySelector('.top-bar:not(.bottom-bar-wrap)');
         const bottomBarEl = document.querySelector('.bottom-bar-wrap');
 
@@ -739,16 +1155,17 @@
                 `画框(${frame.src}) x${frame.x} y${frame.y} ${Math.round(frame.w)}×${Math.round(frame.h)}  中心应在 x${Math.round(frame.x + frame.w / 2)} y${Math.round(frame.y + frame.h / 2)}`,
                 `wrapper ${s.W}×${s.H}  reserve ${s.reserve}  side ${s.side}  fit ${s.fit.toFixed(3)}`,
                 `卡片中心 x${Math.round((b.left + b.right) / 2)} y${Math.round((b.top + b.bottom) / 2)}`,
+                `常亮 ${'wakeLock' in navigator ? (wakeLock ? '已开启' : '未开启') : '浏览器不支持'}`,
                 navigator.userAgent
             ].join('\n');
         }
         if (/[?&]debug\b/.test(location.search)) toggleDebug();
-        let dateTaps = [];
+        let cardTaps = [];
         // 触发点用数字卡片：面积大、本身没有点击功能；日期那一行太细，旁边的签名一点就进入编辑
         document.querySelectorAll('.clock-container').forEach(el => el.addEventListener('click', () => {
             const now = Date.now();
-            dateTaps = dateTaps.filter(t => now - t < 2000).concat(now);
-            if (dateTaps.length >= 5) { dateTaps = []; toggleDebug(); }
+            cardTaps = cardTaps.filter(t => now - t < 2000).concat(now);
+            if (cardTaps.length >= 5) { cardTaps = []; toggleDebug(); }
         }));
 
         let fitQueued = false;
@@ -763,10 +1180,12 @@
             [appWrapper, topBarEl, bottomBarEl, ...document.querySelectorAll('.v-above, .v-below')].forEach(el => ro.observe(el));
         }
         window.addEventListener('resize', queueFit);
-        rotateBtn.addEventListener('click', queueFit);
-        document.querySelectorAll('.nav-item').forEach(el => el.addEventListener('click', queueFit));
         if (document.fonts && document.fonts.ready) document.fonts.ready.then(queueFit);
+
+        const savedTab = store.get('tab', 'clock');
+        if (['clock', 'pomodoro', 'timer'].includes(savedTab) && savedTab !== 'clock') switchTab(savedTab);
         fitLayout();
+        syncWakeLock();   // 重开页面时计时还在跑：接着保持常亮
     </script>
 </body>
 </html>
