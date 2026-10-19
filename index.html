@@ -48,6 +48,9 @@
             --input-border: rgba(255, 255, 255, 0.15);
             --input-text: #ffffff;
             --modal-content-bg: rgba(28, 28, 30, 0.9);
+            --sys-blue: #0a84ff;   /* iOS 系统蓝/红（深色模式那一档），用在签名确认操作表的按钮上 */
+            --sys-red: #ff453a;
+            --sheet-bg: #242426;
 
             /* 尺寸：每种布局只定卡片宽度这一个量，高度和字号按设计比例推出来。
                这里只写"最大想要多大"——不再设 240px 这类像素上限（2560 宽的屏上时钟只占 1/3），
@@ -83,6 +86,9 @@
             --input-border: rgba(0,0,0,0.15);
             --input-text: #1d1d1f;
             --modal-content-bg: rgba(255, 255, 255, 0.95);
+            --sys-blue: #007aff;
+            --sys-red: #ff3b30;
+            --sheet-bg: #ffffff;
         }
 
         /* 手机物理竖屏状态的响应式尺寸 */
@@ -357,6 +363,30 @@
         .setting-row .time-input { width: 56px; }
         .modal-hint { font-size: 12px; color: var(--ui-text); margin-top: 14px; line-height: 1.6; }
 
+        /* 签名改动确认：照 iOS 有未保存改动时的操作表（action sheet）——从底部弹出，
+           上面一组是「保存 / 放弃修改」，下面单独一块「继续编辑」；点空白处等于继续编辑。
+           背景只压暗不模糊：钟还得看得见 */
+        .sheet-overlay { z-index: 1100; align-items: flex-end; background: rgba(0,0,0,0.4); -webkit-backdrop-filter: none; backdrop-filter: none;
+                         padding: 0 8px max(8px, env(safe-area-inset-bottom)); }
+        body.force-landscape .sheet-overlay { padding-bottom: max(8px, env(safe-area-inset-left)); }
+        .sheet { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 8px;
+                 transform: translateY(calc(100% + 16px)); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+        .sheet-overlay.active .sheet { transform: none; }
+        /* 底色完全不透明、不用毛玻璃：哪怕 97% 不透明，后面白色大数字也会透出一层虚影（强制横屏时操作表正好压在数字上） */
+        :root[data-theme="light"] .sheet-overlay { background: rgba(0,0,0,0.2); }
+        .sheet-group { background: var(--sheet-bg); border-radius: 14px; overflow: hidden; }
+        .sheet-title { padding: 14px 16px 2px; font-size: 13px; color: var(--ui-text); text-align: center; }
+        .sheet-preview { padding: 2px 16px 14px; font-size: 15px; color: var(--ui-text-active); text-align: center; line-height: 1.5; letter-spacing: 1px; overflow-wrap: anywhere; }
+        .sheet-btn { display: block; width: 100%; min-height: 56px; font-size: 18px; color: var(--sys-blue); cursor: pointer;
+                     border-top: 1px solid var(--btn-border); -webkit-tap-highlight-color: transparent; }
+        .sheet-btn.danger { color: var(--sys-red); }
+        .sheet-btn:active { background: var(--btn-hover); }
+        .sheet-cancel { background: var(--sheet-bg); border-top: 0; border-radius: 14px; font-weight: 600; }
+        .sheet-btn:focus-visible { outline: 2px solid var(--ui-text-active); outline-offset: -2px; }
+        /* 有鼠标的电脑上放正中，别让人把视线挪到屏幕最底下 */
+        @media (hover: hover) and (pointer: fine) { .sheet-overlay { align-items: center; } }
+        @media (prefers-reduced-motion: reduce) { .sheet { transition: none; } }
+
         /* hover 只给有鼠标的设备：触屏上点过之后 hover 会一直粘着（按钮停在浮起/变色的状态） */
         @media (hover: hover) {
             .icon-btn:hover { background: var(--btn-bg); }
@@ -471,6 +501,18 @@
                     <span class="time-label" style="margin-left: 12px;">休息</span><input type="number" id="set-break" class="time-input" inputmode="numeric" min="1" max="60" aria-label="休息分钟数"><span class="time-label">分钟</span>
                 </div>
                 <p class="modal-hint">计时进行中会保持屏幕常亮（浏览器支持时）。空格键：开始/暂停　F：沉浸模式　Esc：关闭</p>
+            </div>
+        </div>
+
+        <div class="modal-overlay sheet-overlay" id="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-sheet-title">
+            <div class="sheet">
+                <div class="sheet-group">
+                    <div class="sheet-title" id="quote-sheet-title">签名改过了，要保存吗？</div>
+                    <div class="sheet-preview" id="quote-sheet-text"></div>
+                    <button type="button" class="sheet-btn" id="quote-save">保存</button>
+                    <button type="button" class="sheet-btn danger" id="quote-discard">放弃修改</button>
+                </div>
+                <button type="button" class="sheet-btn sheet-cancel" id="quote-continue">继续编辑</button>
             </div>
         </div>
     </div>
@@ -610,9 +652,9 @@
 
         /* ================= 4. 时钟 ================= */
         let lastDateKey = '';
-        function updateClock() {
+        function updateClock(animate) {
             const now = new Date();
-            const anim = isShown('clock');
+            const anim = animate !== false && isShown('clock');
             setTimePair('c-h', now.getHours(), anim);
             setTimePair('c-m', now.getMinutes(), anim);
             setTimePair('c-s', now.getSeconds(), anim);
@@ -629,7 +671,10 @@
             updateClock();
             setTimeout(syncClock, 1000 - new Date().getMilliseconds());
         }
-        syncClock();
+        // 第一次直接显示当前时间，不从 00 翻过来：以前打开页面 6 位一起翻，翻到一半时上半张是新数字、
+        // 下半张还是 0（实测持续 0.5 秒，手机首屏渲染慢时更久），看起来就是卡住了
+        updateClock(false);
+        setTimeout(syncClock, 1000 - new Date().getMilliseconds());
 
         /* ================= 5. 提示、提醒音、常亮 ================= */
         let toastTimer;
@@ -916,18 +961,43 @@
                 document.execCommand('insertText', false, text);
             });
         }
-        quoteEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); quoteEl.blur(); } });
+        function caretToEnd() {
+            const r = document.createRange(); r.selectNodeContents(quoteEl); r.collapse(false);
+            const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        }
+        // 回车 / 键盘上的「完成」= 编辑结束（中文输入法选词时按的回车不算）
+        quoteEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); quoteEl.blur(); } });
         quoteEl.addEventListener('input', () => {
             let t = quoteEl.textContent.replace(/[\r\n]+/g, ' ');
             if (t.length > QUOTE_MAX) t = t.slice(0, QUOTE_MAX);
-            if (t !== quoteEl.textContent || (t === '' && quoteEl.innerHTML !== '')) {
-                quoteEl.textContent = t;
-                const r = document.createRange(); r.selectNodeContents(quoteEl); r.collapse(false);
-                const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-            }
-            store.set('savedQuote', t);
+            if (t !== quoteEl.textContent || (t === '' && quoteEl.innerHTML !== '')) { quoteEl.textContent = t; caretToEnd(); }
         });
-        quoteEl.addEventListener('blur', () => { const t = quoteEl.textContent.trim(); if (t !== quoteEl.textContent) quoteEl.textContent = t; store.set('savedQuote', t); });
+
+        // 改签名不再边打边存：编辑结束时（点别处、键盘「完成」或上面的 ✓）内容真的变了，
+        // 弹操作表问一句——保存 / 放弃修改 / 继续编辑。以前每敲一个字就写进存储，改错了回不去
+        let quoteSaved = quoteEl.textContent;
+        const quoteSheet = $('quote-sheet');
+        const quoteSheetOpen = () => quoteSheet.classList.contains('active');
+        quoteEl.addEventListener('blur', () => {
+            // 切到别的窗口 / App 也会让它失焦，但那时 activeElement 仍是签名、回来焦点会自己回来——这不算改完，不弹。
+            // 不用 document.hasFocus() 判断：没拿到窗口焦点的页面（实测无头浏览器）它恒为 false，会导致永远不弹、改动白丢
+            if (document.visibilityState === 'hidden' || document.activeElement === quoteEl) return;
+            const t = quoteEl.textContent.trim();
+            if (t !== quoteEl.textContent) quoteEl.textContent = t;
+            if (t === quoteSaved) return;
+            $('quote-sheet-text').textContent = t ? '「' + t + '」' : '签名会被清空';
+            quoteSheet.classList.add('active');
+        });
+        function closeQuoteSheet(action) {
+            quoteSheet.classList.remove('active');
+            if (action === 'save') { quoteSaved = quoteEl.textContent.trim(); store.set('savedQuote', quoteSaved); }
+            else if (action === 'discard') quoteEl.textContent = quoteSaved;
+            else { quoteEl.focus(); caretToEnd(); }   // 在点击里同步 focus，iPhone 才会把键盘弹回来
+        }
+        $('quote-save').addEventListener('click', () => closeQuoteSheet('save'));
+        $('quote-discard').addEventListener('click', () => closeQuoteSheet('discard'));
+        $('quote-continue').addEventListener('click', () => closeQuoteSheet('continue'));
+        quoteSheet.addEventListener('click', e => { if (e.target === quoteSheet) closeQuoteSheet('continue'); });   // 点空白处 = 取消这个操作表，回去接着改
 
         const modal = $('theme-modal');
         function openSettings() {
@@ -1079,7 +1149,8 @@
 
         // 页面从挂起中恢复（锁屏回来、切回标签页、从后台缓存恢复）时立刻追上真实时间，不等下一次定时器。
         // 只靠 visibilitychange 不够：页面被冻结再解冻时它不一定触发（实测 CDP 冻结恢复后只有 resume），要几个一起听
-        function catchUp() { updateClock(); ensureTicker(); syncWakeLock(); }   // 都是幂等的，多跑一次没有代价
+        // 追的时候直接换字不播翻页：离开了好一会儿，几位数字一起翻，又是开头那种"上新下旧"的半截画面
+        function catchUp() { updateClock(false); renderPomo(false); renderTimer(false); ensureTicker(); syncWakeLock(); }   // 都是幂等的，多跑一次没有代价
         document.addEventListener('visibilitychange', catchUp);
         document.addEventListener('resume', catchUp);
         window.addEventListener('pageshow', catchUp);
@@ -1087,7 +1158,18 @@
 
         // 键盘：空格 开始/暂停，F 沉浸模式，Esc 关设置/退出输入
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') { if (modal.classList.contains('active')) closeSettings(); else if (isEditing()) document.activeElement.blur(); return; }
+            if (e.defaultPrevented) return;   // 签名里按回车已经处理过（它刚把操作表弹出来，这一下不能再算成"保存"）
+            if (quoteSheetOpen()) {           // 操作表开着时只认 回车=保存、Esc=继续编辑（焦点在按钮上时回车让按钮自己处理）
+                if (e.key === 'Escape') closeQuoteSheet('continue');
+                else if (e.key === 'Enter' && !(e.target.closest && e.target.closest('button'))) { e.preventDefault(); closeQuoteSheet('save'); }
+                return;
+            }
+            if (e.key === 'Escape') {
+                if (modal.classList.contains('active')) closeSettings();
+                else if (document.activeElement === quoteEl) { quoteEl.textContent = quoteSaved; quoteEl.blur(); }   // 改签名时按 Esc = 直接放弃
+                else if (isEditing()) document.activeElement.blur();
+                return;
+            }
             if (isEditing() || e.ctrlKey || e.metaKey || e.altKey) return;
             if (e.key === ' ' || e.code === 'Space') {
                 if (e.target.closest && e.target.closest('button')) return;   // 焦点在按钮上时，空格本来就会点那个按钮
@@ -1185,6 +1267,9 @@
         const savedTab = store.get('tab', 'clock');
         if (['clock', 'pomodoro', 'timer'].includes(savedTab) && savedTab !== 'clock') switchTab(savedTab);
         fitLayout();
+        // 视图的淡入上移只留给切标签用；刚打开就该直接是一只走着的钟，不用再等 0.4 秒滑进来
+        const bootView = document.querySelector('.view-container.active');
+        if (bootView.getAnimations) bootView.getAnimations().forEach(a => a.finish());
         syncWakeLock();   // 重开页面时计时还在跑：接着保持常亮
     </script>
 </body>

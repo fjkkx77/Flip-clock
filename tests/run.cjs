@@ -53,6 +53,19 @@ function layoutChecks(tag, g) {
   let c = await open(390, 844, 3);
   await c.goto(U); await fresh(c);
 
+  // 刚打开那一帧：数字要直接是当前时间（以前 6 位从 00 一起翻，上半张新、下半张 0，卡半秒），视图也不该还在淡入
+  await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__first = null; (function f() {
+    const ds = [...document.querySelectorAll('#clock-dom .flip-digit')];
+    if (!ds.length || !document.body) return requestAnimationFrame(f);
+    const v = document.querySelector('.view-container.active');
+    window.__first = { top: ds.map(d => d.querySelector('.top.static span').textContent).join(''), bot: ds.map(d => d.querySelector('.bottom.static span').textContent).join(''),
+      flipping: document.querySelectorAll('#clock-dom .flip-anim-top, #clock-dom .flip-anim-bottom').length,
+      fading: v.getAnimations().filter(a => a.playState === 'running').length };
+  })();` });
+  await c.goto(U);
+  const first = await c.ev('window.__first');
+  check('刚打开第一帧：数字就是当前时间、没有在翻、没有在淡入', first && first.top === first.bot && first.top !== '000000' && first.flipping === 0 && first.fading === 0, first);
+
   const res = await c.ev("performance.getEntriesByType('resource').map(e => e.name)");
   check('不再请求 Google Fonts', !res.some(n => /googleapis|gstatic/.test(n)), res.filter(n => /font/.test(n)));
   check('数字字体(本地 Oswald)已加载', await c.ev("document.fonts.ready.then(() => document.fonts.check('600 50px Oswald'))"));
@@ -145,9 +158,29 @@ function layoutChecks(tag, g) {
   await c.ev("document.querySelector('[data-tab=clock]').click()"); await sleep(200);
   await c.ev("{ const q = document.getElementById('quote-text'); q.focus(); q.textContent = 'x'.repeat(60); q.dispatchEvent(new Event('input')); }");
   check('签名限 40 字', (await c.ev("document.getElementById('quote-text').textContent.length")) === 40);
-  await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); await sleep(100);
+  check('签名边打边不存（没确认前存储里还是旧的）', (await c.ev("localStorage.getItem('savedQuote')")) === null);
+  await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); await sleep(400);
   check('签名按回车结束编辑', await c.ev("document.activeElement !== document.getElementById('quote-text')"));
-  await c.ev("{ const q = document.getElementById('quote-text'); q.textContent = ''; q.dispatchEvent(new Event('input')); }");
+  const SHEET = "document.getElementById('quote-sheet').classList.contains('active')";
+  check('改过签名 → 弹出保存/放弃/继续编辑操作表，且回车那一下没被顺手算成保存',
+    (await c.ev(SHEET)) && (await c.ev("localStorage.getItem('savedQuote')")) === null && /x{40}/.test(await c.ev("document.getElementById('quote-sheet-text').textContent")));
+  const sheetBox = await c.ev("(() => { const b = document.querySelector('#quote-sheet .sheet').getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, vw: innerWidth, vh: innerHeight, btnH: document.getElementById('quote-save').offsetHeight }; })()");
+  check('操作表在屏幕内、贴底、按钮够高', sheetBox.l >= 0 && sheetBox.r <= sheetBox.vw && sheetBox.b <= sheetBox.vh && sheetBox.vh - sheetBox.b < 60 && sheetBox.btnH >= 44, sheetBox);
+  await c.vshot(path.join(__dirname, 'shots', 'p390-quote-sheet.png'));
+  await c.ev("document.getElementById('quote-continue').click()"); await sleep(400);
+  check('继续编辑：操作表收起、回到签名输入、内容还在', !(await c.ev(SHEET)) && await c.ev("document.activeElement === document.getElementById('quote-text') && document.getElementById('quote-text').textContent === 'x'.repeat(40)"));
+  await c.ev("document.getElementById('quote-text').blur()"); await sleep(400);
+  await c.ev("document.getElementById('quote-discard').click()"); await sleep(400);
+  check('放弃修改：恢复成原来那句、不写存储', !(await c.ev(SHEET)) && (await c.ev("document.getElementById('quote-text').textContent")) === '心态代表风水' && (await c.ev("localStorage.getItem('savedQuote')")) === null);
+  await c.ev("{ const q = document.getElementById('quote-text'); q.focus(); q.blur(); }"); await sleep(300);
+  check('没改动就结束编辑 → 不弹', !(await c.ev(SHEET)));
+  await c.ev("{ const q = document.getElementById('quote-text'); q.focus(); q.textContent = 'abc'; q.dispatchEvent(new Event('input')); }");
+  await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await sleep(300);
+  check('改签名时按 Esc = 直接放弃、不弹', !(await c.ev(SHEET)) && (await c.ev("document.getElementById('quote-text').textContent")) === '心态代表风水');
+  await c.ev("{ const q = document.getElementById('quote-text'); q.focus(); q.textContent = ''; q.dispatchEvent(new Event('input')); q.blur(); }"); await sleep(400);
+  check('清空也会问，提示"会被清空"', (await c.ev(SHEET)) && /清空/.test(await c.ev("document.getElementById('quote-sheet-text').textContent")));
+  await c.ev("document.getElementById('quote-save').click()"); await sleep(400);
+  check('保存：存进存储', !(await c.ev(SHEET)) && (await c.ev("localStorage.getItem('savedQuote')")) === '');
 
   // 设置：主题、横屏、标签页都要记住；弹窗淡入、Esc 关闭
   await c.ev("document.getElementById('settings-btn').click()"); await sleep(400);
