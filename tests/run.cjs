@@ -271,6 +271,92 @@ function layoutChecks(tag, g) {
     c.close();
   }
 
+  /* ---------- 待机显示 standby.html：iPhone 14 Pro 横屏 852×393 ---------- */
+  c = await open(852, 393, 3);
+  await c.send('Page.addScriptToEvaluateOnNewDocument', { source: FAKE_WL });
+  const SB = U + 'standby.html';
+  await c.goto(SB); await c.ev('localStorage.clear()');
+  await c.goto(SB + '?t=2026-10-26T14:54:10&page=1&face=0'); await sleep(700);
+  check('待机显示：打开就申请屏幕常亮', await c.ev('__wl.req >= 1'), await c.ev('__wl'));
+  check('待机显示：画板 852×393 在 iPhone 14 Pro 横屏下 1:1（缩放 1、不转）', await c.ev('__sb.view.s === 1 && !__sb.view.rot'), await c.ev('__sb.view'));
+  check('数字样式显示 14:54', (await c.ev("[...document.querySelectorAll('.face-digital text')].slice(0, 4).map(t => t.textContent).join('')")) === '1454');
+  const cal = await c.ev(`(() => { const cs = [...document.querySelectorAll('#stack-r circle')]; const r = [...document.querySelectorAll('#stack-r rect')].filter(e => +e.getAttribute('width') > 30);
+    return { today: cs.map(e => [+(+e.getAttribute('cx')).toFixed(1), +(+e.getAttribute('cy')).toFixed(1)]), lines: r.map(e => +(+e.getAttribute('x') + 15.35).toFixed(1)) }; })()`);
+  check('月历：26 号红圈在第 5 行第 1 列（实测 478.5,341.8）、10 号（调休上班）下面有红线',
+    cal.today.length === 1 && Math.abs(cal.today[0][0] - 478.3) < 1 && Math.abs(cal.today[0][1] - 342) < 1 && cal.lines.length === 1 && Math.abs(cal.lines[0] - 708.3) < 1, cal);
+  const bj = await c.ev("(() => { const c = [...document.querySelectorAll('.face-world circle')].find(e => +e.getAttribute('r') > 8); return c && [+c.getAttribute('cx'), +c.getAttribute('cy')]; })()");
+  check('世界时钟：北京定位点在截图位置（687.4,140）±1', bj && Math.abs(bj[0] - 687.4) < 1 && Math.abs(bj[1] - 140) < 1.5, bj);
+  check('白天 14:54 不是夜间模式', !(await c.ev("document.getElementById('board').classList.contains('night')")));
+  const drag = async (x0, y0, x1, y1, steps = 8, ms = 16) => {
+    await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+    for (let i = 1; i <= steps; i++) { await c.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + (x1 - x0) * i / steps, y: y0 + (y1 - y0) * i / steps }] }); await sleep(ms); }
+    await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(900);
+  };
+  await drag(426, 200, 426, 60);
+  check('时钟页上滑 → 换到下一个样式（指针）', (await c.ev('__sb.pagers.facePager.idx')) === 1);
+  await drag(426, 120, 426, 140, 4, 60);
+  check('慢慢拖一点点就松手 → 弹回原样式', (await c.ev('__sb.pagers.facePager.idx')) === 1);
+  await drag(300, 200, 700, 200);
+  check('右滑 → 回到小组件页', (await c.ev('__sb.pagers.hPager.idx')) === 0);
+  await drag(200, 300, 200, 80);
+  const stk = await c.ev("({ idx: __sb.pagers.stackLPager.idx, dots: document.getElementById('dots-l').classList.contains('show'), on: [...document.querySelectorAll('#dots-l b')].findIndex(b => b.classList.contains('on')) })");
+  check('左边叠放上滑 → 换到下一个小组件，旁边出现位置圆点', stk.idx === 1 && stk.dots && stk.on === 1, stk);
+  await sleep(1700);
+  check('停下 1 秒多后圆点淡出', !(await c.ev("document.getElementById('dots-l').classList.contains('show')")));
+  await drag(640, 300, 640, 80);
+  check('右边月历上滑：只有一项，弹回不动', (await c.ev('__sb.pagers.stackRPager.idx')) === 0 && (await c.ev('__sb.pagers.stackLPager.idx')) === 1);
+  await drag(100, 200, -200, 200, 8, 16);
+  await drag(700, 200, 300, 200);
+  check('左滑 → 回到时钟页、样式还是刚才那个', (await c.ev('__sb.pagers.hPager.idx')) === 1 && (await c.ev('__sb.pagers.facePager.idx')) === 1);
+  // 连甩两下（第二下在第一下的弹簧动画还没停时按下）：两下都要算
+  await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 426, y: 300 }] });
+  for (let i = 1; i <= 4; i++) { await c.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 426, y: 300 - 40 * i }] }); await sleep(10); }
+  await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(80);
+  await drag(426, 300, 426, 140, 4, 10);
+  check('动画半路再甩一下不被吞（连甩两下走两格）', (await c.ev('__sb.pagers.facePager.idx')) === 3, await c.ev('__sb.pagers.facePager.idx'));
+  await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 426, y: 200 }] }); await sleep(800);
+  await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(300);
+  check('长按 → 弹出设置（夜间模式 / 颜色 / 退出）', await c.ev("document.getElementById('sheet').classList.contains('open') && getComputedStyle(document.getElementById('grp-color')).display !== 'none'"));
+  const segH = await c.ev("[...document.querySelectorAll('#seg-night button, .btns button')].map(b => Math.round(b.getBoundingClientRect().height))");
+  check('设置面板按钮高度：分段 ≥30、底部按钮 ≥44', segH.slice(0, 3).every(h => h >= 30) && segH.slice(3).every(h => h >= 44), segH);
+  await c.ev("document.querySelector('#seg-night [data-v=on]').click()"); await sleep(200);
+  check('夜间模式「打开」→ 整屏变红、记住设置', await c.ev("document.getElementById('board').classList.contains('night') && localStorage.getItem('sbNight') === 'on'"));
+  await c.ev("document.querySelector('#seg-night [data-v=auto]').click()"); await sleep(200);
+  check('「自动」在 14:54 → 不是夜间', !(await c.ev("document.getElementById('board').classList.contains('night')")));
+  await c.ev("document.querySelectorAll('#swatches button')[1].click()"); await sleep(200);
+  check('换颜色生效并记住（日光样式）', (await c.ev("localStorage.getItem('sbColor_solar')")) === '1');
+  await c.ev("document.querySelectorAll('#swatches button')[0].click(); document.getElementById('btn-done').click()"); await sleep(300);
+  check('点「完成」收起设置', !(await c.ev("document.getElementById('sheet').classList.contains('open')")));
+  await c.goto(SB + '?t=2026-10-26T02:30:00'); await sleep(600);
+  check('「自动」在凌晨 2:30 → 夜间模式', await c.ev("document.getElementById('board').classList.contains('night')"));
+  check('重开后记住上次停在哪一页、哪个样式', (await c.ev('[__sb.pagers.hPager.idx, __sb.pagers.facePager.idx]')).join() === '1,3');
+  const lunarSb = await c.ev("Array.from({ length: 800 }, (_, i) => __sb.lunarText(new Date(2025, 0, 1 + i * 3)))");
+  check('待机显示页没有 JS 报错', c.errors.length === 0, c.errors);
+  await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await sleep(700);
+  check('Esc → 退出待机显示，回到时钟主页', /\/$/.test(await c.ev('location.pathname')), await c.ev('location.pathname'));
+  const lunarIdx = await c.ev("Array.from({ length: 800 }, (_, i) => lunarText(new Date(2025, 0, 1 + i * 3)))");
+  check('两个页面的农历换算结果逐日一致（2025 起 800 个日期）', JSON.stringify(lunarSb) === JSON.stringify(lunarIdx) && lunarIdx[0] === '腊月初二');
+  await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 }); await sleep(700);
+  check('主页按 S → 进入待机显示', /standby\.html$/.test(await c.ev('location.pathname')));
+  await c.vshot(path.join(__dirname, 'shots', 'sb852-clock.png'));
+  c.close();
+
+  /* ---------- 待机显示：竖着拿（开了竖排锁定）390×844 → 整块转 90°，手势方向跟着换算 ---------- */
+  c = await open(390, 844, 3);
+  await c.goto(SB); await c.ev("localStorage.clear(); localStorage.setItem('sbPage', '0')");
+  await c.goto(SB + '?t=2026-10-26T14:54:10'); await sleep(700);
+  const pv = await c.ev("(() => { const b = document.getElementById('board').getBoundingClientRect(); return { rot: __sb.view.rot, s: __sb.view.s, l: b.left, t: b.top, r: b.right, b: b.bottom }; })()");
+  check('竖屏：画板转 90°、等比缩放后完整在屏幕内', pv.rot && pv.l >= -0.5 && pv.t >= -0.5 && pv.r <= 390.5 && pv.b <= 844.5 && pv.s > 0.9, pv);
+  // 转过来后，画面的「向左滑」= 手指在屏幕上往上划
+  await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 650 }] });
+  for (let i = 1; i <= 8; i++) { await c.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 195, y: 650 - 50 * i }] }); await sleep(16); }
+  await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(900);
+  check('竖屏：手指往上划 = 画面里向左滑 → 翻到时钟页', (await c.ev('__sb.pagers.hPager.idx')) === 1);
+  check('竖着进来的，不会因为「是竖屏」就自动退出', /standby\.html$/.test(await c.ev('location.pathname')));
+  await c.vshot(path.join(__dirname, 'shots', 'sb390-rotated.png'));
+  check('页面无 JS 报错', c.errors.length === 0, c.errors);
+  c.close();
+
   /* ---------- 冻结页面 5 秒（相当于 iPhone 锁屏/切后台）：单独开一个浏览器跑 ----------
      headless 里冻结再恢复后，CSS 动画/过渡的时钟会停住，留在同一页里会让后面量位置的用例失真 */
   c = await open(390, 844, 3);

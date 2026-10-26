@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="翻页时钟">
+    <meta name="theme-color" content="#000000">
+    <title>待机显示</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <!--
+      仿 iPhone「待机显示」（StandBy，iOS 17 起）。
+      参照物：用户 iPhone 14 Pro 上的 15 张原生截图（2556×1179 = 852×393pt × 3）。
+      下面所有尺寸、位置、颜色都以 pt 为单位，是从那批截图上逐个量出来的（量法和原始读数见 PROJECT_STATUS.md「待机显示」一节）。
+      整块画面是一张 852×393 的画板，按屏幕等比缩放；竖着拿时整块转 90°（和主页「强制横屏」同一个方向）。
+      交互照 Apple 使用手册：左右滑切换小组件/时钟，上下滑切换样式；长按出设置（Apple 是长按进编辑）。
+    -->
+    <style>
+        :root {
+            --sans: system-ui, -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+            --rounded: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+        html, body { height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
+        body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none;
+               font-family: var(--sans); color: #fff; -webkit-tap-highlight-color: transparent; }
+
+        #board { position: fixed; left: 0; top: 0; width: 852px; height: 393px; transform-origin: 0 0; overflow: hidden; background: #000; }
+        .track { position: absolute; left: 0; top: 0; }
+        .page { position: absolute; top: 0; width: 852px; height: 393px; overflow: hidden; }
+        .abs { position: absolute; left: 0; top: 0; }
+        svg.layer { position: absolute; left: 0; top: 0; width: 852px; height: 393px; overflow: visible; }
+        svg text { font-family: var(--sans); }
+
+        /* ---------- 颜色：白天值是截图实测，夜间值也是（夜间截图同一批量出来的） ---------- */
+        #board {
+            --pri: #ffffff; --accent: #ff453a; --sec: #949496; --tick: #606060; --tick-hour: #f9f9f9; --orange: #ff9f0a;
+            --sep: #333335; --today-text: #ffffff; --dot-on: #ffffff; --dot-off: #797979;
+            /* 全屏指针 */
+            --an-hour-tick: #b0b0b0; --an-num: #ffffff; --an-hand: #ffffff; --an-date: #ffffff; --an-wk: #ff453a; --an-sec: #ff9f0a;
+            /* 数字 */
+            --dg-date: #ffffff; --dg-temp: #ffffff;
+            /* 世界 */
+            --w-on: #cdcdcd; --w-off: #535353; --w-city: #ff9230; --w-big: #ffffff; --w-small: #ffffff; --w-arrow: #ffffff;
+            --w-curve-a: #a0a0a0; --w-curve-b: #7c7c7c; --w-curve-c: #565656; --w-curve-d: #212121; --w-curve-e: #1b1b1b;
+        }
+        #board.night {
+            --pri: #f30508; --accent: #f30508; --sec: #8a0408; --tick: #590305; --tick-hour: #f30508; --orange: #a5050f;
+            --sep: #2a0204; --today-text: #000000; --dot-on: #f30508; --dot-off: #590305;
+            --an-hour-tick: #ce0205; --an-num: #d10003; --an-hand: #fd0101; --an-date: #90050e; --an-wk: #b80a0f; --an-sec: #a5050f;
+            --dg-date: #ca0307; --dg-temp: #9b0306;
+            --w-on: #9e0002; --w-off: #5f0101; --w-city: #c90306; --w-big: #fe0101; --w-small: #9d0205; --w-arrow: #d10102;
+            --w-curve-a: #ac0004; --w-curve-b: #860003; --w-curve-c: #5c0002; --w-curve-d: #240000; --w-curve-e: #1b0000;
+        }
+
+        /* ---------- 指针（HTML 块 + CSS 动画转，交给合成器，不占主线程） ---------- */
+        .hand { position: absolute; width: 0; height: 0; animation: spin linear infinite; }
+        .hand i { position: absolute; display: block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .freeze .hand, .freeze .fl { animation-play-state: paused !important; }
+
+        /* ---------- 智能叠放的圆点（滑动时出现，停下后淡出） ---------- */
+        .stack-dots { position: absolute; left: 418.7px; width: 6px; opacity: 0; transition: opacity 0.35s; pointer-events: none; }
+        .stack-dots.show { opacity: 1; transition: opacity 0.15s; }
+        .stack-dots b { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--dot-off); margin-bottom: 6.3px; }
+        .stack-dots b.on { background: var(--dot-on); }
+        .clip { position: absolute; top: 0; height: 393px; overflow: hidden; }
+
+        /* ---------- 漂浮（Float）：各位数字慢慢浮动；截图里同一个数字两次的倾斜角度不同（-1.7° / +3.6°），推断是在动 ---------- */
+        .fl { position: absolute; mix-blend-mode: screen; transform-origin: 50% 50%; animation: float1 9s ease-in-out infinite alternate; }
+        .fl.k2 { animation-name: float2; animation-duration: 11s; }
+        .fl.k3 { animation-name: float3; animation-duration: 8s; }
+        .fl.k4 { animation-name: float4; animation-duration: 10s; }
+        .fl.k5 { animation-name: float2; animation-duration: 12s; }
+        @keyframes float1 { from { transform: translateY(-3px) rotate(-2deg); } to { transform: translateY(4px) rotate(3deg); } }
+        @keyframes float2 { from { transform: translateY(4px) rotate(4deg); } to { transform: translateY(-4px) rotate(-2deg); } }
+        @keyframes float3 { from { transform: translateY(-4px) rotate(-5deg); } to { transform: translateY(3px) rotate(2deg); } }
+        @keyframes float4 { from { transform: translateY(3px) rotate(5deg); } to { transform: translateY(-3px) rotate(-1deg); } }
+        @media (prefers-reduced-motion: reduce) { .fl { animation: none; } }
+
+        /* ---------- 长按出来的设置面板（照 iOS 深色分组列表） ---------- */
+        #sheet { position: absolute; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center;
+                 opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0s 0.2s; z-index: 50; }
+        #sheet.open { opacity: 1; visibility: visible; transition: opacity 0.2s; }
+        .panel { width: 420px; max-height: 373px; overflow-y: auto; background: #1c1c1e; border-radius: 20px; padding: 14px 16px 16px;
+                 color: #fff; font-size: 15px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); touch-action: pan-y; }
+        .panel h2 { font-size: 17px; font-weight: 600; text-align: center; margin-bottom: 10px; }
+        .grp { background: #2c2c2e; border-radius: 12px; margin-bottom: 10px; }
+        .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 6px 12px; }
+        .row + .row { border-top: 0.5px solid rgba(84,84,88,0.65); }
+        .row small { display: block; font-size: 12px; color: rgba(235,235,245,0.6); margin-top: 1px; }
+        .seg { display: flex; background: rgba(118,118,128,0.24); border-radius: 9px; padding: 2px; flex: none; }
+        .seg button { min-width: 52px; height: 30px; border: 0; border-radius: 7px; background: none; color: #fff; font: 500 13px var(--sans); }
+        .seg button.on { background: #636366; }
+        .sw { -webkit-appearance: none; appearance: none; flex: none; width: 51px; height: 31px; border-radius: 16px; background: rgba(120,120,128,0.32); position: relative; transition: background 0.2s; }
+        .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,0.15); transition: transform 0.25s cubic-bezier(0.25,0.8,0.25,1); }
+        .sw:checked { background: #30d158; } .sw:checked::after { transform: translateX(20px); }
+        .swatches { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+        .swatches button { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; padding: 0; background-clip: padding-box; }
+        .swatches button.on { box-shadow: 0 0 0 2px #1c1c1e, 0 0 0 4px #fff; }
+        .btns { display: flex; gap: 10px; }
+        .btns button { flex: 1; height: 44px; border: 0; border-radius: 12px; background: #2c2c2e; color: #0a84ff; font: 600 16px var(--sans); }
+        .btns button.danger { color: #ff453a; }
+        .hint { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); padding: 6px 14px; border-radius: 16px; background: rgba(44,44,46,0.9);
+                color: rgba(235,235,245,0.8); font-size: 13px; white-space: nowrap; opacity: 0; transition: opacity 0.4s; pointer-events: none; z-index: 40; }
+        .hint.show { opacity: 1; }
+    </style>
+</head>
+<body>
+<div id="board">
+    <div class="track" id="h-track">
+        <!-- 第 1 页：小组件（左右两个叠放） -->
+        <div class="page" id="p-widgets" style="left:0">
+            <div class="clip" id="clip-l" style="left:0;width:412px"><div class="track" id="stack-l"></div></div>
+            <div class="clip" id="clip-r" style="left:430px;width:422px"><div class="track" id="stack-r"></div></div>
+            <div class="stack-dots" id="dots-l"></div>
+        </div>
+        <!-- 第 2 页：时钟（5 种样式上下切换） -->
+        <div class="page" id="p-clock" style="left:852px">
+            <div class="track" id="faces"></div>
+        </div>
+    </div>
+    <div class="hint" id="hint"></div>
+    <div id="sheet" role="dialog" aria-modal="true" aria-label="待机显示设置">
+        <div class="panel" id="panel">
+            <h2>待机显示</h2>
+            <div class="grp">
+                <div class="row"><span>夜间模式<small id="night-note">自动：22:00–7:00 变红（网页拿不到环境光，用时间代替）</small></span>
+                    <div class="seg" id="seg-night"><button data-v="auto">自动</button><button data-v="on">打开</button><button data-v="off">关闭</button></div></div>
+                <div class="row" id="row-temp"><span>显示气温<small id="temp-note">“数字”样式右上角；要用到定位</small></span><input type="checkbox" class="sw" id="sw-temp"></div>
+            </div>
+            <div class="grp" id="grp-color"><div class="row"><span>颜色<small id="color-note"></small></span></div><div class="swatches" id="swatches"></div></div>
+            <div class="btns"><button type="button" class="danger" id="btn-exit">退出待机显示</button><button type="button" id="btn-done">完成</button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const NS = 'http://www.w3.org/2000/svg';
+const W = 852, H = 393;
+const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+};
+const params = new URLSearchParams(location.search);
+// 测试/对照截图用：?t=2026-10-26T14:54:41 把显示的时间钉到某一刻（只影响显示），?night=1 强制夜间
+const T_OFFSET = params.has('t') ? Date.parse(params.get('t')) - Date.now() : 0;
+const now = () => new Date(Date.now() + T_OFFSET);
+const pad2 = n => String(n).padStart(2, '0');
+const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+const board = $('board');
+
+/* ================= 农历（与 index.html 同一份香港天文台数据表，tests 里比对两边结果一致） ================= */
+const LUNAR_TABLE = [
+    0x627520,0x4cea50,0x3964a5,0x5c64b0,0x44a9b0,0x315564,0x5656a0,0x40b590,0x2b7522,0x507520,
+    0x3bb256,0x60b250,0x48a4b0,0x334ab5,0x582ad0,0x4256b0,0x2cb692,0x52da90,0x3fd927,0x64e920,
+    0x4cd250,0x37a4d5,0x5ca560,0x462b60,0x2f5b54,0x566d40,0x40ea90,0x2de922,0x50e920,0x3ad266,
+    0x5e52b0,0x48a570,0x332b65,0x58b5a0,0x446d40,0x2eec93,0x527490,0x3d6937,0x62a930,0x4c52b0,
+    0x34a5b6,0x5aaad0,0x4656a0,0x31b554,0x56ba40,0x40b490,0x2ba932,0x50a950,0x3952d7,0x5e5360,
+    0x48aad0,0x355aa5,0x585b20,0x42da50,0x2fd4a3,0x54d4a0,0x3ca958,0x60a970,0x4c5560,0x36ab56,
+    0x5aad50,0x466d20,0x30ea54,0x56ea50,0x4064a0,0x28c973,0x4ea9b0,0x3b55a7,0x5e56a0,0x48b690,
+    0x357525,0x5ab520,0x42b250,0x2d64b4,0x52a4b0,0x3d4ab8,0x602ad0,0x4a56d0,0x36b696,0x5cda90,
+    0x46d920,0x31d254,0x56d250,0x41a4da,0x64a560,0x4e2b60,0x385b56,0x5e6d50,0x48ea90,0x35e925,
+    0x5ae920,0x44d260,0x2ca563,0x50a570,0x3d4d68,0x6235a0,0x4a6d50,0x376c95,0x5c7490,0x466930,
+    0x2f52b4,0x5452b0,0x3ea5b0,0x2b55a2,0x4e56a0,0x39b557,0x60ba40,0x4ab490,0x33a935,0x58a950,
+    0x4252d0,0x2caad4,0x50ab50,0x3d5aa9,0x625d20,0x4cda50,0x37d4a6,0x5cd4a0,0x46c950,0x3152e4,
+    0x545560,0x3eab50,0x2b5b22,0x506d20,0x38ea56,0x5e7250,0x4864b0,0x32c975,0x56cab0,0x4255a0,
+    0x2cad63,0x52b690,0x3d752b,0x62b520,0x4cb250,0x37a4b6,0x5aa4b0,0x444ab0,0x2e55b5,0x545ad0,
+    0x3eb6a0,0x2bb522,0x50d920,0x3bd257,0x5ed250,0x48a550,0x334ad5,0x584b60,0x405b50,0x2cdaa3,
+    0x52ec90,0x3fe928,0x62e920,0x4cd260,0x36a566,0x5aa570,0x445560,0x2e6d54,0x547550,0x407490,
+    0x28e933,0x4e6930,0x3952b7,0x5e52b0,0x46a5b0,0x3355a5,0x5856a0,0x42b650,0x2d74a4,0x52b4a0,
+    0x3da958,0x62a950,0x4a52d0,0x34aad6,0x5aab50,0x465aa0,0x2eba54,0x54da50,0x40d4a0,0x2bc953,
+    0x4ec960,0x3994e7,0x5e5560,0x48ab50,0x335b25,0x586d20,0x42ea50,0x2ee4a4,0x5068b0,0x3ac978,
+    0x604ab0,0x4a55b0,0x34ad66,0x5ab6a0,0x467520,0x317254,0x54b450,0x3ea8b0,0x2949b2,0x4e4ab0
+];
+const LUNAR_MIN_YEAR = 1901, MS_PER_DAY = 86400000;
+function getLunarYearInfo(ly) {
+    const raw = LUNAR_TABLE[ly - LUNAR_MIN_YEAR];
+    if (raw === undefined) return null;
+    const leapMonth = raw & 0xF, sizeBits = (raw >> 4) & 0x1FFF, newYearOffset = (raw >> 17) & 0x3F;
+    const days = [];
+    for (let i = 0; i < (leapMonth ? 13 : 12); i++) days.push(((sizeBits >> i) & 1) ? 30 : 29);
+    return { leapMonth, monthDays: days, newYearMs: Date.UTC(ly, 0, 1) + newYearOffset * MS_PER_DAY };
+}
+function solarToLunar(y, m, d) {
+    const ms = Date.UTC(y, m - 1, d);
+    let info = getLunarYearInfo(y);
+    if (!info || ms < info.newYearMs) info = getLunarYearInfo(y - 1);
+    if (!info || ms < info.newYearMs) return null;
+    let offset = Math.round((ms - info.newYearMs) / MS_PER_DAY), idx = 0;
+    while (idx < info.monthDays.length && offset >= info.monthDays[idx]) { offset -= info.monthDays[idx]; idx++; }
+    if (idx >= info.monthDays.length) return null;
+    if (!info.leapMonth || idx < info.leapMonth) return { month: idx + 1, isLeap: false, day: offset + 1 };
+    if (idx === info.leapMonth) return { month: info.leapMonth, isLeap: true, day: offset + 1 };
+    return { month: idx, isLeap: false, day: offset + 1 };
+}
+function lunarText(date) {
+    const l = solarToLunar(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    if (!l) return '';
+    const M = ['正','二','三','四','五','六','七','八','九','十','冬','腊'];
+    const D = l.day === 10 ? '初十' : l.day === 20 ? '二十' : l.day === 30 ? '三十'
+        : ['初','十','廿','三'][Math.floor(l.day / 10)] + '〇一二三四五六七八九'[l.day % 10];
+    return (l.isLeap ? '闰' : '') + M[l.month - 1] + '月' + D;
+}
+
+/* 调休上班日（日历里数字下面那条红线）。来源：国务院办公厅关于 2025 / 2026 年部分节假日安排的通知（新华社全文）。
+   2027 年的通知一般每年 11 月才发，没发之前不标——不按规律猜 */
+const MAKEUP_WORKDAYS = new Set(['2025-01-26', '2025-02-08', '2025-04-27', '2025-09-28', '2025-10-11',
+    '2026-01-04', '2026-02-14', '2026-02-28', '2026-05-09', '2026-09-20', '2026-10-10']);
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/* ================= 画板适配：等比缩放，竖着拿就整块转 90° ================= */
+// 画框参照和主页一样：没有浏览器界面时用 outer（iPhone 主屏幕模式下 innerHeight 会跳）
+function getFrame() {
+    const noUI = navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+    if (noUI && outerWidth > 0 && outerHeight > 0) return { w: outerWidth, h: outerHeight };
+    const vv = window.visualViewport;
+    return vv ? { w: vv.width, h: vv.height } : { w: innerWidth, h: innerHeight };
+}
+const view = { rot: false, s: 1 };
+function fit() {
+    const f = getFrame(), rot = f.h > f.w;
+    const bw = rot ? f.h : f.w, bh = rot ? f.w : f.h;
+    const s = Math.min(bw / W, bh / H);
+    view.rot = rot; view.s = s;
+    board.style.transform = `translate(${f.w / 2}px, ${f.h / 2}px) rotate(${rot ? 90 : 0}deg) scale(${s}) translate(${-W / 2}px, ${-H / 2}px)`;
+}
+window.addEventListener('resize', fit);
+if (window.visualViewport) visualViewport.addEventListener('resize', fit);
+fit();
+
+/* ================= 文字排版：按「墨迹框」对准截图量出来的位置 =================
+   截图量到的是字形实际画出来的范围（墨迹），不是排版框。canvas 能量墨迹，就用它反推该把基线放在哪。
+   Apple 用的「窄体/宽体」SF 字形，Safari 的 canvas 量不了 font-stretch（MDN：iOS 不支持 ctx.fontStretch），
+   所以先按正常宽度量，再乘上 SVG 里实测的「拉伸前后字宽比」，最后横向缩放到截图上的宽度——
+   字体真有窄体时缩放接近 1，没有时也能保证位置、大小和截图一致（只是笔画粗细会差一点） */
+const SANS = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim();
+const ROUNDED = getComputedStyle(document.documentElement).getPropertyValue('--rounded').trim();
+const mctx = document.createElement('canvas').getContext('2d');
+function ink(text, font) {
+    mctx.font = font;
+    const m = mctx.measureText(text);
+    return { l: -m.actualBoundingBoxLeft, r: m.actualBoundingBoxRight, t: -m.actualBoundingBoxAscent, b: m.actualBoundingBoxDescent, adv: m.width };
+}
+const probeSvg = document.createElementNS(NS, 'svg');
+probeSvg.setAttribute('style', 'position:absolute;left:-9999px;top:0;width:10px;height:10px;visibility:hidden');
+document.body.appendChild(probeSvg);
+const stretchCache = {};
+function stretchRatio(weight, family, stretch) {
+    if (!stretch || stretch === '100%') return 1;
+    const key = weight + family + stretch;
+    if (stretchCache[key]) return stretchCache[key];
+    const mk = st => { const t = document.createElementNS(NS, 'text'); t.textContent = '0123456789';
+        t.setAttribute('style', `font: ${weight} 100px ${family}; font-stretch: ${st}`); probeSvg.appendChild(t); const w = t.getComputedTextLength(); t.remove(); return w; };
+    const a = mk('100%'), b = mk(stretch);
+    return (stretchCache[key] = a > 0 && b > 0 ? b / a : 1);
+}
+// 在 svg 里放一段字，让它的墨迹框按 opts 对齐：x/xAlign(l|c|r)、y/yAlign(t|c|b|base)；
+// capH + capRef = 「capRef 这个字的墨迹高度应当是 capH」，据此反推字号（截图量的是墨迹高度）。
+// 数字行一律用 base（基线）对齐：0/5/6/8 这类圆底字会比基线低 1~2pt，按墨迹底对齐会让整行跟着内容上下跳
+function makeText(parent, cls) { const t = document.createElementNS(NS, 'text'); if (cls) t.setAttribute('class', cls); parent.appendChild(t); return t; }
+function placeText(t, text, o) {
+    const family = o.family || 'var(--sans)', famCanvas = o.family === 'var(--rounded)' ? ROUNDED : SANS;
+    let size = o.size;
+    if (o.capH) {   // 字号按某个参照字的墨迹高度反推（截图量的是墨迹高度）
+        const k = ink(o.capRef || '0', `${o.weight} 100px ${famCanvas}`);
+        size = o.capH / ((k.b - k.t) / 100);
+    }
+    const font = `${o.weight} ${size}px ${famCanvas}`;
+    const g = ink(text, font);
+    const ratio = stretchRatio(o.weight, famCanvas, o.stretch);
+    let sx = 1;
+    if (o.inkW) sx = o.inkW / ((g.r - g.l) * ratio);           // 横向缩放到截图上的墨迹宽度
+    const k = ratio * sx;
+    const inkL = g.l * k, inkR = g.r * k;
+    let x0 = o.x;
+    if (o.xAlign === 'c') x0 = o.x - (inkL + inkR) / 2;
+    else if (o.xAlign === 'r') x0 = o.x - inkR;
+    else x0 = o.x - inkL;
+    let y0 = o.y;
+    if (o.yAlign === 'base') y0 = o.y;
+    else if (o.yAlign === 'c') y0 = o.y - (g.t + g.b) / 2;
+    else if (o.yAlign === 't') y0 = o.y - g.t;
+    else y0 = o.y - g.b;
+    t.textContent = text;
+    t.setAttribute('style', `font-family:${family};font-weight:${o.weight};font-size:${size}px;${o.stretch ? 'font-stretch:' + o.stretch + ';' : ''}${o.fill ? 'fill:' + o.fill + ';' : ''}`);
+    t.setAttribute('transform', `translate(${x0} ${y0}) scale(${sx} 1)`);
+    return { size, sx, inkL: x0 + inkL, inkR: x0 + inkR };
+}
+
+/* ================= 共用小部件 ================= */
+function el(tag, cls, parent, style) { const e = document.createElement(tag); if (cls) e.className = cls; if (style) e.setAttribute('style', style); if (parent) parent.appendChild(e); return e; }
+function svgLayer(parent) { const s = document.createElementNS(NS, 'svg'); s.setAttribute('class', 'layer'); s.setAttribute('viewBox', `0 0 ${W} ${H}`); parent.appendChild(s); return s; }
+function sv(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+
+// 指针：粗段（圆头）+ 连到中心的细颈。量到的是：颈宽、粗段起点、针尖（含圆头）、粗段宽
+function makeHand(parent, cx, cy, spec, color) {
+    const h = el('div', 'hand', parent, `left:${cx}px;top:${cy}px`);
+    if (spec.neck) el('i', '', h, `left:${-spec.neck / 2}px;top:${-spec.from - 1}px;width:${spec.neck}px;height:${spec.from + 1}px;background:${color};border-radius:${spec.neck / 2}px`);
+    el('i', '', h, `left:${-spec.w / 2}px;top:${-spec.tip}px;width:${spec.w}px;height:${spec.tip - (spec.tail ? -spec.tail : spec.from)}px;background:${color};border-radius:${spec.round === false ? 0 : spec.w / 2}px`);
+    return h;
+}
+function makeCenter(parent, cx, cy, white, orange, black, colors) {
+    const c = el('div', 'abs', parent, `left:${cx}px;top:${cy}px`);
+    el('i', '', c, `position:absolute;left:${-white}px;top:${-white}px;width:${white * 2}px;height:${white * 2}px;border-radius:50%;background:${colors[0]}`);
+    el('i', '', c, `position:absolute;left:${-orange}px;top:${-orange}px;width:${orange * 2}px;height:${orange * 2}px;border-radius:50%;background:${colors[1]}`);
+    el('i', '', c, `position:absolute;left:${-black}px;top:${-black}px;width:${black * 2}px;height:${black * 2}px;border-radius:50%;background:#000`);
+    return c;
+}
+const hands = [];   // { el, period(s) }
+function syncHands() {
+    const d = now(), sec = d.getSeconds() + d.getMilliseconds() / 1000;
+    const t = { 60: sec, 3600: d.getMinutes() * 60 + sec, 43200: (d.getHours() % 12) * 3600 + d.getMinutes() * 60 + sec };
+    for (const h of hands) { h.el.style.animationDuration = h.period + 's'; h.el.style.animationDelay = -t[h.period] + 's'; }
+}
+function addHands(parent, cx, cy, spec, vars) {
+    hands.push({ el: makeHand(parent, cx, cy, spec.hour, vars.hand), period: 43200 });
+    hands.push({ el: makeHand(parent, cx, cy, spec.min, vars.hand), period: 3600 });
+    hands.push({ el: makeHand(parent, cx, cy, spec.sec, vars.sec), period: 60 });
+    makeCenter(parent, cx, cy, spec.disc[0], spec.disc[1], spec.disc[2], [vars.hand, vars.sec]);
+}
+
+/* ================= 小组件 1：圆形时钟（实测：中心 235.5,196.5；刻度外径 153.8、长 13） ================= */
+function buildRoundClock(host) {
+    const s = svgLayer(host), cx = 235.5, cy = 196.5;
+    for (let i = 0; i < 60; i++) {
+        const a = i * 6 * Math.PI / 180, hour = i % 5 === 0, w = hour ? 3.6 : 3.3;
+        const r1 = 140.8 + w / 2, r2 = 153.8 - w / 2;
+        sv('line', { x1: cx + Math.sin(a) * r1, y1: cy - Math.cos(a) * r1, x2: cx + Math.sin(a) * r2, y2: cy - Math.cos(a) * r2,
+            'stroke-width': w, 'stroke-linecap': 'round', style: `stroke:var(${hour ? '--tick-hour' : '--tick'})` }, s);
+    }
+    for (let n = 1; n <= 12; n++) {
+        const a = n * 30 * Math.PI / 180;
+        placeText(makeText(s), String(n), { weight: 600, capH: 27.5, x: cx + Math.sin(a) * 116.8, xAlign: 'c', y: cy - Math.cos(a) * 116.8, yAlign: 'c', fill: 'var(--pri)' });
+    }
+    addHands(host, cx, cy, {
+        hour: { neck: 5, from: 21, tip: 89.5, w: 10.7 }, min: { neck: 5, from: 22, tip: 150.5, w: 10.7 },
+        sec: { w: 1.7, tip: 152.5, tail: 24, from: 0 }, disc: [9.1, 5.4, 1.9]
+    }, { hand: 'var(--pri)', sec: 'var(--orange)' });
+}
+
+/* ================= 小组件 2：方形时钟（刻度外框 317.6 见方、外圆角 31.6；分钟刻度长 18.3、小时 34） ================= */
+// 射线与圆角方框的交点距离（中心到边界）：h = 半边长，rc = 圆角半径
+function rayToRoundedSquare(ang, h, rc) {
+    const ux = Math.abs(Math.sin(ang)), uy = Math.abs(Math.cos(ang));
+    let r = Math.min(ux > 1e-9 ? h / ux : Infinity, uy > 1e-9 ? h / uy : Infinity);
+    const a = h - rc, x = ux * r, y = uy * r;
+    if (rc > 0 && x > a && y > a) {   // 落在圆角里：解 |r·u − (a,a)| = rc
+        const b = ux * a + uy * a, c = 2 * a * a - rc * rc;
+        r = b + Math.sqrt(Math.max(0, b * b - c));
+    }
+    return r;
+}
+function buildSquareClock(host) {
+    const s = svgLayer(host), cx = 235.5, cy = 196.5;
+    for (let i = 0; i < 60; i++) {
+        const a = i * 6 * Math.PI / 180, hour = i % 5 === 0;
+        const ro = rayToRoundedSquare(a, 158.8, 31.6), ri = hour ? rayToRoundedSquare(a, 124.8, 0) : rayToRoundedSquare(a, 140.5, 13.3);
+        sv('line', { x1: cx + Math.sin(a) * ri, y1: cy - Math.cos(a) * ri, x2: cx + Math.sin(a) * ro, y2: cy - Math.cos(a) * ro,
+            'stroke-width': hour ? 3.3 : 2.9, style: `stroke:var(${hour ? '--tick-hour' : '--tick'})` }, s);
+    }
+    const o = { weight: 600, capH: 35, capRef: '1', fill: 'var(--pri)' };
+    placeText(makeText(s), '12', { ...o, x: 235, xAlign: 'c', y: 85, yAlign: 't' });
+    placeText(makeText(s), '6', { ...o, x: 235.2, xAlign: 'c', y: 308.3, yAlign: 'b' });
+    placeText(makeText(s), '9', { ...o, x: 123, xAlign: 'l', y: 196.7, yAlign: 'c' });
+    placeText(makeText(s), '3', { ...o, x: 348, xAlign: 'r', y: 196.7, yAlign: 'c' });
+    addHands(host, cx, cy, {
+        hour: { neck: 5, from: 21, tip: 96, w: 10.7 }, min: { neck: 5, from: 22, tip: 164.5, w: 10.7 },
+        sec: { w: 1.7, tip: 157.9, tail: 27.3, from: 0 }, disc: [9.1, 5.4, 1.9]
+    }, { hand: 'var(--pri)', sec: 'var(--orange)' });
+}
+
+/* ================= 小组件 3：日历·当天（周一 10月 / 大号日期 / 竖排农历） ================= */
+const dayWidgets = [];
+function buildDayWidget(host) {
+    const s = svgLayer(host);
+    const top = makeText(s), big = makeText(s), lunar = [0, 1, 2, 3, 4].map(() => makeText(s));
+    dayWidgets.push(d => {
+        // 第一行「周一 10月」：周几红、月份灰，46pt 粗体，整行墨迹居中在 233.5，基线 100.7
+        top.textContent = '';
+        const w1 = sv('tspan', { style: 'fill:var(--accent)' }, top); w1.textContent = '周' + WEEK[d.getDay()];
+        const w2 = sv('tspan', { style: 'fill:var(--sec)' }, top); w2.textContent = ' ' + (d.getMonth() + 1) + '月';
+        const g = ink(w1.textContent + w2.textContent, `700 46px ${SANS}`);
+        top.setAttribute('style', 'font-weight:700;font-size:46px');
+        top.setAttribute('transform', `translate(${233.5 - (g.l + g.r) / 2} 100.7)`);
+        // 大号日期：数字高 144（「2」实测 157.3→299.3），和右边竖排农历（宽 32、间隔 12.6）一起居中在 237.6
+        const num = String(d.getDate()), all = [...lunarText(d)];
+        const cap = { weight: 600, capH: 142, capRef: '2', y: 299.3, yAlign: 'base', fill: 'var(--pri)' };
+        const r = placeText(big, num, { ...cap, x: 0, xAlign: 'l' });
+        const bw = r.inkR - r.inkL, gap = 12.6, lw = 32, left = 237.6 - (bw + gap + lw) / 2;
+        placeText(big, num, { ...cap, x: left, xAlign: 'l' });
+        // 竖排农历：四个字时字号 36、行距 35.8（实测）；闰月是五个字，同一段高度里放下
+        const n = all.length, pitch = n > 4 ? 28.6 : 35.8, fs = n > 4 ? 29 : 36;
+        lunar.forEach((t, i) => {
+            if (i >= n) { t.textContent = ''; return; }
+            placeText(t, all[i], { weight: 700, size: fs, x: left + bw + gap + lw / 2, xAlign: 'c', y: 174.4 + i * pitch, yAlign: 'c', fill: 'var(--pri)' });
+        });
+    });
+}
+
+/* ================= 小组件 4：月历（列距 46、首列中心 478.3；今天红圈直径 40；调休上班日红线） ================= */
+function buildMonthWidget(host) {
+    const s = svgLayer(host);
+    dayWidgets.push(d => {
+        while (s.firstChild) s.firstChild.remove();
+        // 表头：「10月」红色 25pt 粗体（「1」高 17.7、基线 58.7）｜ 细竖线 ｜ 当天农历灰色
+        const head = placeText(makeText(s), (d.getMonth() + 1) + '月', { weight: 700, capH: 17.7, capRef: '1', x: 467.3, xAlign: 'l', y: 58.7, yAlign: 'base', fill: 'var(--accent)' });
+        // 竖线、农历跟在月份后面（实测：「10月」墨迹右缘 514.7 → 竖线 527.8 → 农历 538）；「1月」这类短月份也跟着往左收
+        sv('rect', { x: head.inkR + 13.1, y: 39.3, width: 0.6, height: 21, style: 'fill:var(--sep)' }, s);
+        placeText(makeText(s), lunarText(d), { weight: 500, size: 24.5, x: head.inkR + 23.3, xAlign: 'l', y: 50.2, yAlign: 'c', fill: 'var(--sec)' });
+        const colX = i => 478.3 + 46 * i;
+        ['一', '二', '三', '四', '五', '六', '日'].forEach((w, i) => {
+            placeText(makeText(s), w, { weight: 600, size: 21, x: colX(i), xAlign: 'c', y: 95.9, yAlign: 'c', fill: i >= 5 ? 'var(--sec)' : 'var(--pri)' });
+        });
+        const y0 = d.getFullYear(), m0 = d.getMonth(), first = new Date(y0, m0, 1), days = new Date(y0, m0 + 1, 0).getDate();
+        const lead = (first.getDay() + 6) % 7, rows = Math.ceil((lead + days) / 7);
+        // 5 行时实测行心 146.3 → 342.0；行数不同就在同一段里平分（只有 5 行的截图，4/6 行是推的）
+        const rowY = r => rows > 1 ? 146.3 + (342.0 - 146.3) * r / (rows - 1) : 146.3;
+        const capK = ink('1', `600 100px ${SANS}`), size = 15.5 / ((capK.b - capK.t) / 100);
+        for (let day = 1; day <= days; day++) {
+            const idx = lead + day - 1, c = idx % 7, r = Math.floor(idx / 7), x = colX(c), y = rowY(r);
+            const isToday = day === d.getDate(), weekend = c >= 5;
+            if (isToday) sv('circle', { cx: x, cy: y, r: 19.85, style: 'fill:var(--accent)' }, s);
+            const t = makeText(s);
+            t.textContent = String(day);
+            t.setAttribute('x', x); t.setAttribute('y', y + 15.7 / 2); t.setAttribute('text-anchor', 'middle');
+            t.setAttribute('style', `font-weight:600;font-size:${size}px;fill:${isToday ? 'var(--today-text)' : weekend ? 'var(--sec)' : 'var(--pri)'}`);
+            if (MAKEUP_WORKDAYS.has(ymd(new Date(y0, m0, day)))) sv('rect', { x: x - 15.35, y: y + 14.6, width: 30.7, height: 3, rx: 1.5, style: 'fill:var(--accent)' }, s);
+        }
+    });
+}
+
+/* ================= 时钟样式 1：数字（实测：数字墨迹高 282、颜色 #7AAAF2；冒号两个直径 44.3 的圆点） ================= */
+const faceUpdaters = [];
+const PALETTES = {
+    // 第一项都是截图实测的默认色；其余是 Apple HIG 深色模式系统色——Apple 真实可选的颜色截图里没有，这些是代用的
+    digital: ['#7aaaf2', '#ffffff', '#ff453a', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#bf5af2'],
+    float: [['#0062bd', '#52a2ea'], ['#a3001d', '#ff5b6e'], ['#a34d00', '#ffa23d'], ['#007a37', '#3fdc7c'], ['#5b1fa3', '#b98cff']],
+    solar: [0, 150, 210, 300]   // 色相旋转角：0 = 截图里的紫色
+};
+const colorIdx = k => Math.min(+store.get('sbColor_' + k, 0) || 0, (PALETTES[k] || [0]).length - 1);
+function buildDigital(host) {
+    const s = svgLayer(host);
+    const digits = [0, 1, 2, 3].map(() => makeText(s));
+    const dots = [sv('circle', { cx: 319, cy: 122, r: 22.15 }, s), sv('circle', { cx: 319, cy: 273.3, r: 22.15 }, s)];
+    const date1 = makeText(s), date2 = makeText(s);
+    const CELL = [126.9, 239.5, 404.0, 514.2];
+    faceUpdaters.push(d => {
+        const night = board.classList.contains('night');
+        const col = night ? '#9b0000' : PALETTES.digital[colorIdx('digital')];
+        const str = pad2(d.getHours()) + pad2(d.getMinutes());
+        // 字宽按「0」的墨迹宽 101.7 定横向缩放（夜间截图 02:29 的 0 实测），四位共用同一个缩放，保证字形比例一致
+        // 字高：「1」「4」实测 56.7→338.7（282）；字宽按「0」的墨迹宽 101.7 定横向缩放（夜间 02:29 实测），四位共用同一个缩放
+        const base = placeText(digits[0], '0', { weight: 800, capH: 282, capRef: '1', stretch: '50%', inkW: 101.7, x: 0, xAlign: 'c', y: 338.7, yAlign: 'base' });
+        const r = stretchRatio(800, SANS, '50%');
+        [...str].forEach((ch, i) => {
+            const g = ink(ch, `800 ${base.size}px ${SANS}`);
+            placeText(digits[i], ch, { weight: 800, size: base.size, stretch: '50%', inkW: (g.r - g.l) * r * base.sx, x: CELL[i], xAlign: 'c', y: 338.7, yAlign: 'base', fill: col });
+        });
+        dots.forEach(c => c.setAttribute('style', 'fill:' + col));
+        // 右上角：「26 周一」第一行（31pt，日期白、星期跟数字同色，基线 77）；第二行气温（开了才有，基线 112.8）
+        date1.textContent = '';
+        const a = sv('tspan', { style: 'fill:var(--dg-date)' }, date1); a.textContent = d.getDate() + ' ';
+        const b = sv('tspan', { style: 'fill:' + (night ? 'var(--dg-date)' : col) }, date1); b.textContent = '周' + WEEK[d.getDay()];
+        date1.setAttribute('style', 'font-weight:500;font-size:31px');
+        const g1 = ink(a.textContent + b.textContent, `500 31px ${SANS}`);
+        date1.setAttribute('transform', `translate(${623 - g1.l} 77)`);
+        const temp = weather.text();
+        if (temp) placeText(date2, temp, { weight: 500, size: 31, x: 623, xAlign: 'l', y: 112.8, yAlign: 'base', fill: 'var(--dg-temp)' });
+        else date2.textContent = '';
+    });
+}
+
+/* ================= 时钟样式 2：指针（满屏矩形表盘：外框 49–803 × 24–369，刻度是从中心发出的 60 条射线） ================= */
+// 白天分钟刻度的亮度随离中心的距离变（实测 51→115），夜间统一 #5B070E
+const AN_TICK_GRAD = [[161, 51], [164, 55], [168, 60], [175, 62], [198, 72], [215, 76], [239, 82], [272, 90], [366, 110], [383, 113], [398, 115]];
+function interp(tab, x) {
+    if (x <= tab[0][0]) return tab[0][1];
+    for (let i = 1; i < tab.length; i++) if (x <= tab[i][0]) { const [x0, y0] = tab[i - 1], [x1, y1] = tab[i]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0); }
+    return tab[tab.length - 1][1];
+}
+function rayToRect(ang, hw, hh) {
+    const ux = Math.abs(Math.sin(ang)), uy = Math.abs(Math.cos(ang));
+    return Math.min(ux > 1e-9 ? hw / ux : Infinity, uy > 1e-9 ? hh / uy : Infinity);
+}
+function buildAnalog(host) {
+    const s = svgLayer(host), cx = 426, cy = 196.5;
+    const minuteTicks = [];
+    for (let i = 0; i < 60; i++) {
+        const a = i * 6 * Math.PI / 180, hour = i % 5 === 0, longHour = hour && i !== 0 && i !== 30;   // 12 点和 6 点的位置被数字占了，刻度只有短的一截
+        const ro = rayToRect(a, 377, 172.5), ri = longHour ? rayToRect(a, 302, 94.2) : rayToRect(a, 351, 147.5);
+        const ln = sv('line', { x1: cx + Math.sin(a) * ri, y1: cy - Math.cos(a) * ri, x2: cx + Math.sin(a) * ro, y2: cy - Math.cos(a) * ro,
+            'stroke-width': hour ? 3.3 : 1.8 }, s);
+        if (hour) ln.setAttribute('style', 'stroke:var(--an-hour-tick)');
+        else { const mid = (ri + ro) / 2; minuteTicks.push({ ln, v: Math.round(interp(AN_TICK_GRAD, mid)) }); }
+    }
+    const o = { weight: 600, capH: 37, capRef: '1', stretch: '150%', fill: 'var(--an-num)' };
+    placeText(makeText(s), '12', { ...o, inkW: 64.3, x: 425.1, xAlign: 'c', y: 84, yAlign: 'c' });
+    placeText(makeText(s), '6', { ...o, inkW: 42, x: 425.7, xAlign: 'c', y: 309.5, yAlign: 'c' });
+    placeText(makeText(s), '9', { ...o, inkW: 42, x: 163.3, xAlign: 'c', y: 197.2, yAlign: 'c' });
+    placeText(makeText(s), '3', { ...o, inkW: 40.7, x: 688.7, xAlign: 'c', y: 197.2, yAlign: 'c' });
+    const date = makeText(s);
+    faceUpdaters.push(d => {
+        const night = board.classList.contains('night');
+        minuteTicks.forEach(t => t.ln.setAttribute('style', 'stroke:' + (night ? '#5b070e' : `rgb(${t.v},${t.v},${t.v})`)));
+        date.textContent = '';
+        const a = sv('tspan', { style: 'fill:var(--an-date)' }, date); a.textContent = d.getDate() + ' ';
+        const b = sv('tspan', { style: 'fill:var(--an-wk)' }, date); b.textContent = '周' + WEEK[d.getDay()];
+        date.setAttribute('style', 'font-weight:500;font-size:23.7px');
+        const g = ink(a.textContent + b.textContent, `500 23.7px ${SANS}`);
+        date.setAttribute('transform', `translate(${555 - g.l} 205)`);
+    });
+    addHands(host, cx, cy, {
+        hour: { neck: 5, from: 22, tip: 93, w: 11.3 }, min: { neck: 5, from: 23, tip: 160, w: 11.3 },
+        sec: { w: 2, tip: 173, tail: 27, from: 0 }, disc: [7.6, 5, 1.8]
+    }, { hand: 'var(--an-hand)', sec: 'var(--an-sec)' });
+}
+
+/* ================= 时钟样式 3：世界（点阵地图 + 昼夜分界线） =================
+   陆地点：12pt 网格、直径 7pt，从白天/夜间两张截图逐格取出来（631 个，被文字挡住的格子用另一张补）。
+   两套坐标（都是拟合出来的）：
+   · 陆地和定位点：x = 449.3 + 2.046·经度，y = 219.8 − 2.0·纬度（以北京点 687.4,140 定位）
+   · 分界线：x = 462.5 + 2.0456·经度，y = 226.1 − 2.0008·纬度（用 NOAA 太阳位置公式对两张截图的曲线最小二乘，中位误差 2.1pt）
+   两套差了约 6°，是 Apple 自己的画法；按截图复刻，不去「纠正」它。点亮/变暗按分界线那套判，和截图逐点比对 98% 一致（其余是曲线压在点上） */
+const LAND = '3:22-35,40-41;4:17-24,26-34,47-49,53-57,61-63;5:10-26,29-34,40-43,46-47,49-67;6:8-23,26-27,29-32,34-35,40-67;7:10-22,25-27,30-31,39-67;8:9-10,15-23,25-28,36-37,39-61,64-65;9:16-29,37-62,64;10:17-28,36-42,45-60;11:17-25,36-37,40-59,61;12:18-24,37-39,44-58,60-61;13:19-21,24,36-58;14:20-21,23-26,35-47,49-57;15:21-23,35-47,50-52,54-56;16:23-27,35-46,50-51,54-56,58-59;17:25-29,36-46,51,54-55,57-59;18:24-30,39-45,54-58,61;19:24-32,39-44,56-58,61-63;20:24-32,40-44,46,60,62-63;21:25-31,40-46,59-62;22:26-31,40-43,45,57-63;23:26-30,40-43,57-63;24:26-29,41-42,57-63,67;25:26-28,61-62,67;26:25-27,66-67;27:25-26,66;28:26';
+const MAP_A = { a: 449.3, b: 2.046, c: 219.8, d: 2.0 }, MAP_B = { a: 462.5, b: 2.0456, c: 226.1, d: 2.0008 };
+function sunPos(date) {   // NOAA 简化公式：赤纬、太阳直射点经度（度）
+    const start = Date.UTC(date.getUTCFullYear(), 0, 1), doy = Math.floor((date - start) / 86400000) + 1;
+    const h = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+    const g = 2 * Math.PI / 365 * (doy - 1 + (h - 12) / 24);
+    const eqt = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+    const dec = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+    return { dec: dec * 180 / Math.PI, lon: -15 * (h - 12 + eqt / 60) };
+}
+// 本机时区 → 城市名和坐标（Apple 显示的是当前所在城市，网页不定位就按时区给）
+const TZ_CITY = {
+    'Asia/Shanghai': ['北京', 39.9, 116.4], 'Asia/Chongqing': ['北京', 39.9, 116.4], 'Asia/Harbin': ['北京', 39.9, 116.4], 'Asia/Urumqi': ['乌鲁木齐', 43.8, 87.6],
+    'Asia/Hong_Kong': ['香港', 22.3, 114.2], 'Asia/Macau': ['澳门', 22.2, 113.5], 'Asia/Taipei': ['台北', 25.0, 121.5], 'Asia/Tokyo': ['东京', 35.7, 139.7],
+    'Asia/Seoul': ['首尔', 37.6, 127.0], 'Asia/Singapore': ['新加坡', 1.35, 103.8], 'Europe/London': ['伦敦', 51.5, -0.1], 'Europe/Paris': ['巴黎', 48.9, 2.35],
+    'America/New_York': ['纽约', 40.7, -74.0], 'America/Los_Angeles': ['洛杉矶', 34.05, -118.2], 'Australia/Sydney': ['悉尼', -33.9, 151.2]
+};
+function buildWorld(host) {
+    const s = svgLayer(host);
+    const defs = sv('defs', {}, s);
+    const gr = sv('linearGradient', { id: 'curveGrad', gradientUnits: 'userSpaceOnUse', x1: 0, y1: 150, x2: 0, y2: 300 }, defs);
+    // 线的亮度只跟竖直位置有关（两张截图都是：上半段 ~160，往下 194→124、222→86、257→33、300 以下 ~27）
+    [[0, '--w-curve-a'], [0.293, '--w-curve-b'], [0.48, '--w-curve-c'], [0.713, '--w-curve-d'], [1, '--w-curve-e']].forEach(([o, v]) => sv('stop', { offset: o, style: `stop-color:var(${v})` }, gr));
+    const dots = [];
+    for (const row of LAND.split(';')) {
+        const [r, spans] = row.split(':');
+        for (const sp of spans.split(',')) {
+            const [a, b] = sp.split('-').map(Number);
+            for (let c = a; c <= (b === undefined ? a : b); c++) dots.push({ x: 3 + 12 * c, y: 8 + 12 * +r, el: sv('circle', { cx: 3 + 12 * c, cy: 8 + 12 * +r, r: 3.5 }, s) });
+        }
+    }
+    const curve = sv('path', { fill: 'none', 'stroke-width': 3.6, stroke: 'url(#curveGrad)', 'stroke-linejoin': 'round' }, s);
+    const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || '';
+    const city = TZ_CITY[tz] || null;
+    const loc = city ? sv('circle', { cx: MAP_A.a + MAP_A.b * city[2], cy: MAP_A.c - MAP_A.d * city[1], r: 8.75, style: 'fill:var(--w-city)' }, s) : null;
+    // 左上角：定位箭头 + 小号时间；左下：城市名 + 大号时间
+    sv('path', { d: 'M51.6 43.4 L69.4 35.9 L61.9 53.8 L60.1 45.2 Z', style: 'fill:var(--w-arrow);stroke:var(--w-arrow);stroke-width:1.6;stroke-linejoin:round' }, s);
+    const small = makeText(s), cityT = makeText(s), big = makeText(s);
+    faceUpdaters.push(d => {
+        const sp = sunPos(d), R = Math.PI / 180;
+        dots.forEach(p => {
+            const lon = (p.x - MAP_B.a) / MAP_B.b, lat = (MAP_B.c - p.y) / MAP_B.d;
+            const alt = Math.sin(lat * R) * Math.sin(sp.dec * R) + Math.cos(lat * R) * Math.cos(sp.dec * R) * Math.cos((lon - sp.lon) * R);
+            p.el.setAttribute('style', `fill:var(${alt > 0 ? '--w-on' : '--w-off'})`);
+        });
+        // 分界线只画在地图本身的经度范围里（−180°～180°，即 x 94.3～830.7）：截图里曲线两头就停在这儿，不铺满屏幕
+        let dd = '';
+        for (let lon = -180; lon <= 180; lon += 1) {
+            const x = MAP_B.a + MAP_B.b * lon;
+            const lat = Math.atan(-Math.cos((lon - sp.lon) * R) / Math.tan((Math.abs(sp.dec) < 0.05 ? 0.05 : sp.dec) * R)) / R;
+            dd += (dd ? 'L' : 'M') + x.toFixed(1) + ' ' + (MAP_B.c - MAP_B.d * lat).toFixed(1);
+        }
+        curve.setAttribute('d', dd);
+        const hm = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+        placeText(small, hm, { weight: 600, capH: 18.3, capRef: '1', x: 77, xAlign: 'l', y: 53.7, yAlign: 'base', fill: 'var(--w-small)' });
+        if (city) placeText(cityT, city[0], { weight: 600, size: 26, x: 50.3, xAlign: 'l', y: 250.5, yAlign: 'c', fill: 'var(--w-city)' });
+        placeText(big, hm, { weight: 600, capH: 65, capRef: '1', x: 51, xAlign: 'l', y: 343.7, yAlign: 'base', fill: 'var(--w-big)' });
+        if (loc) loc.style.display = '';
+    });
+}
+
+/* ================= 时钟样式 4：日光（Solar）：左侧一团椭圆光晕 + 宽体数字 =================
+   背景沿水平方向实测（白天）：左缘中间 (89,62,93) → 700pt 处 (201,142,210)；竖直方向同样的亮度在更远处（椭圆，纵横比约 1.4）。
+   夜间：(58,0,0) → 黑，纵横比约 1.7。光晕会不会随太阳位置移动——截图看不出来，这里是静止的 */
+function buildSolar(host) {
+    const bg = el('div', 'abs', host, 'width:852px;height:393px');
+    const s = svgLayer(host);
+    const defs = sv('defs', {}, s);
+    const lg = sv('linearGradient', { id: 'solarText', gradientUnits: 'userSpaceOnUse', x1: 123, y1: 0, x2: 729, y2: 0 }, defs);
+    const st1 = sv('stop', { offset: 0 }, lg), st2 = sv('stop', { offset: 1 }, lg);
+    const hh = makeText(s), mm = makeText(s);
+    const dots = [sv('circle', { r: 14.9 }, s), sv('circle', { r: 14.9 }, s)];
+    faceUpdaters.push(d => {
+        const night = board.classList.contains('night'), hue = PALETTES.solar[colorIdx('solar')];
+        bg.style.background = night
+            ? 'radial-gradient(ellipse 700px 1190px at 0px 196.5px, #3a0000 0%, #360000 7%, #320000 14%, #2a0000 21%, #260000 29%, #1e0000 36%, #170000 43%, #100000 50%, #0a0000 57%, #080000 64%, #040000 71%, #020000 79%, #010101 100%)'
+            : 'radial-gradient(ellipse 700px 980px at 0px 196.5px, rgb(89,62,93) 0%, rgb(93,64,95) 7%, rgb(101,70,104) 14%, rgb(113,79,116) 21%, rgb(129,90,132) 29%, rgb(143,100,148) 36%, rgb(158,110,162) 43%, rgb(172,120,177) 50%, rgb(182,126,187) 57%, rgb(190,131,195) 64%, rgb(195,134,201) 71%, rgb(197,136,203) 79%, rgb(200,140,208) 86%, rgb(201,142,210) 100%)';
+        bg.style.filter = !night && hue ? `hue-rotate(${hue}deg)` : '';
+        s.style.filter = !night && hue ? `hue-rotate(${hue}deg)` : '';
+        st1.setAttribute('style', 'stop-color:' + (night ? '#ce0001' : '#f796fe'));
+        st2.setAttribute('style', 'stop-color:' + (night ? '#ce0001' : '#fda2fe'));
+        // 字高：「1」「4」实测 123.5→271.4（148），按基线 271.4 放
+        const fill = 'url(#solarText)', o = { weight: 500, capH: 148, capRef: '1', stretch: '125%', y: 271.4, yAlign: 'base', fill };
+        // 先按目标高度排一遍拿到宽度，再整体居中在 426；「0」的墨迹宽对齐到 135.9（夜间 02:28 实测）
+        const z = placeText(hh, '0', { ...o, inkW: 135.9, x: 0, xAlign: 'l' });
+        const H2 = pad2(d.getHours()), M2 = pad2(d.getMinutes());
+        const a = placeText(hh, H2, { ...o, x: 0, xAlign: 'l', inkW: null });
+        const b = placeText(mm, M2, { ...o, x: 0, xAlign: 'l', inkW: null });
+        const sx = z.sx, wa = (a.inkR - a.inkL) * sx, wb = (b.inkR - b.inkL) * sx;
+        const gapL = 15.1, colon = 29.8, gapR = 19.1, total = wa + gapL + colon + gapR + wb, left = 426 - total / 2;
+        placeText(hh, H2, { ...o, inkW: wa, x: left, xAlign: 'l' });
+        placeText(mm, M2, { ...o, inkW: wb, x: left + wa + gapL + colon + gapR, xAlign: 'l' });
+        const ccx = left + wa + gapL + colon / 2;
+        dots[0].setAttribute('cx', ccx); dots[0].setAttribute('cy', 159.7);
+        dots[1].setAttribute('cx', ccx); dots[1].setAttribute('cy', 235.2);
+        dots.forEach(c => c.setAttribute('style', 'fill:' + fill));
+    });
+}
+
+/* ================= 时钟样式 5：漂浮（Float）：圆体粗数字互相叠压，叠压处「滤色」变亮 =================
+   白天：第 1、3 位 #0062BD，第 2、4 位 #52A2EA，叠压处实测 (79,191,250) ≈ 两色滤色 (82,198,250)；冒号灰 #BEBEBE 也是滤色叠上去的。
+   夜间：四位都是 #990000，叠压处 (214,0,0) 正好是 153 和 153 滤色的结果。
+   整串宽度实测：白天 14:54 占 67→783、夜间 02:28 占 64→785——按宽度撑满（字高随之变），中心约 424.4 */
+function buildFloat(host) {
+    const wrap = el('div', 'abs', host, 'width:852px;height:393px');
+    const parts = [0, 1, 2, 3, 4].map(i => {
+        const box = el('div', 'fl k' + (i + 1), wrap);
+        const s = document.createElementNS(NS, 'svg'); s.setAttribute('style', 'position:absolute;left:0;top:0;overflow:visible'); box.appendChild(s);
+        return { box, s, t: i === 2 ? null : makeText(s) };
+    });
+    const colonDots = [sv('circle', { r: 34.5 }, parts[2].s), sv('circle', { r: 34.5 }, parts[2].s)];
+    faceUpdaters.push(d => {
+        const night = board.classList.contains('night'), pal = PALETTES.float[colorIdx('float')];
+        const str = pad2(d.getHours()) + pad2(d.getMinutes());
+        // 「0」的墨迹 宽:高 = 184:265（夜间 02:28 实测，高含圆底的溢出）→ 先按这个比例定横向缩放，再整体缩放到宽度 718
+        const cap0 = 265, k0 = ink('0', `900 100px ${ROUNDED}`), sz0 = cap0 / ((k0.b - k0.t) / 100), sx = 184 / ((k0.r - k0.l) * sz0 / 100);
+        const glyph = [...str].map(ch => { const g = ink(ch, `900 ${sz0}px ${ROUNDED}`); return { ch, w: (g.r - g.l) * sx, g }; });
+        const overlap = 10, colonW = 69, colonGap = -2;
+        const widths = [glyph[0].w, glyph[1].w, colonW, glyph[2].w, glyph[3].w];
+        const total = widths[0] + widths[1] - overlap + colonGap + colonW + colonGap + widths[3] + widths[4] - overlap;
+        const k = 718 / total, cy = 196.7;
+        let x = 424.4 - 718 / 2;
+        const lefts = [];
+        lefts[0] = x; x += widths[0] * k - overlap * k;
+        lefts[1] = x; x += widths[1] * k + colonGap * k;
+        lefts[2] = x; x += colonW * k + colonGap * k;
+        lefts[3] = x; x += widths[3] * k - overlap * k;
+        lefts[4] = x;
+        const colors = night ? ['#990000', '#990000', '#990000', '#990000'] : [pal[0], pal[1], pal[0], pal[1]];
+        [0, 1, 3, 4].forEach((pi, n) => {
+            const p = parts[pi], gw = widths[pi] * k, size = sz0 * k;
+            p.box.style.cssText = `left:${lefts[pi]}px;top:${cy - cap0 * k / 2}px;width:${gw}px;height:${cap0 * k}px`;
+            placeText(p.t, glyph[n].ch, { family: 'var(--rounded)', weight: 900, size, inkW: gw, x: 0, xAlign: 'l', y: cap0 * k / 2, yAlign: 'c', fill: colors[n] });
+        });
+        const cw = colonW * k;
+        parts[2].box.style.cssText = `left:${lefts[2]}px;top:${cy - cap0 * k / 2}px;width:${cw}px;height:${cap0 * k}px`;
+        // 冒号两点：白天中心实测 y 130.1 / 259.8（相对整串中心 ∓65），按同一缩放
+        colonDots[0].setAttribute('cx', cw / 2); colonDots[0].setAttribute('cy', cap0 * k / 2 - 65 * k);
+        colonDots[1].setAttribute('cx', cw / 2); colonDots[1].setAttribute('cy', cap0 * k / 2 + 65 * k);
+        colonDots.forEach(c => { c.setAttribute('r', 34.5 * k); c.setAttribute('style', 'fill:' + (night ? '#4a2420' : '#bebebe')); });
+    });
+}
+
+/* ================= 页面拼装 ================= */
+const FACE_ORDER = ['digital', 'analog', 'world', 'solar', 'float'];   // MacStories iOS 17 评测列的顺序
+const facesTrack = $('faces');
+FACE_ORDER.forEach((k, i) => {
+    const f = el('div', 'page face-' + k, facesTrack, `left:0;top:${i * H}px`);
+    ({ digital: buildDigital, analog: buildAnalog, world: buildWorld, solar: buildSolar, float: buildFloat })[k](f);
+});
+const STACK_L = ['round', 'day', 'square'];   // 截图里左边叠放有 4 个圆点：第 1 个推断是圆表，第 2 个日历、第 4 个方表，第 3 个没截到，不编
+const stackL = $('stack-l'), stackR = $('stack-r');
+STACK_L.forEach((k, i) => {
+    const f = el('div', 'page', stackL, `left:0;top:${i * H}px;width:412px`);
+    ({ round: buildRoundClock, day: buildDayWidget, square: buildSquareClock })[k](f);
+});
+{ const f = el('div', 'page', stackR, 'left:-430px;top:0'); buildMonthWidget(f); }
+const dotsL = $('dots-l');
+STACK_L.forEach(() => el('b', '', dotsL));
+dotsL.style.top = (196.7 - (STACK_L.length * 12.3 - 6.3) / 2) + 'px';
+
+/* ================= 刷新：每分钟整点重画文字，指针靠 CSS 动画自己走 ================= */
+let lastDay = '';
+function refresh() {
+    const d = now();
+    syncNight(d);
+    faceUpdaters.forEach(f => f(d));
+    if (ymd(d) !== lastDay) { lastDay = ymd(d); dayWidgets.forEach(f => f(d)); }
+    syncHands();
+}
+function scheduleMinute() {
+    const d = now();
+    setTimeout(() => { refresh(); scheduleMinute(); }, 60000 - (d.getSeconds() * 1000 + d.getMilliseconds()) + 30);
+}
+
+/* ================= 夜间模式：Apple 按环境光自动切（网页拿不到环境光传感器），这里按时间 22:00–7:00 ================= */
+const nightMode = () => params.get('night') === '1' ? 'on' : params.get('night') === '0' ? 'off' : store.get('sbNight', 'auto');
+function syncNight(d) {
+    const m = nightMode(), h = d.getHours();
+    const on = m === 'on' || (m === 'auto' && (h >= 22 || h < 7));
+    if (on !== board.classList.contains('night')) { board.classList.toggle('night', on); lastDay = ''; }
+}
+
+/* ================= 气温（可选）：Open-Meteo 免费接口，不用密钥；要定位，所以默认关 ================= */
+const weather = {
+    t: null,
+    text() { return store.get('sbTemp', '0') === '1' && this.t !== null ? Math.round(this.t) + '°C' : ''; },
+    async load(force) {
+        if (store.get('sbTemp', '0') !== '1') return;
+        try {
+            const c = JSON.parse(store.get('sbTempCache', 'null'));
+            if (c && !force && Date.now() - c.at < 30 * 60000) { this.t = c.t; return; }
+            const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { maximumAge: 3600000, timeout: 15000 }));
+            const u = `https://api.open-meteo.com/v1/forecast?latitude=${pos.coords.latitude.toFixed(2)}&longitude=${pos.coords.longitude.toFixed(2)}&current=temperature_2m`;
+            const j = await (await fetch(u)).json();
+            if (j && j.current && typeof j.current.temperature_2m === 'number') {
+                this.t = j.current.temperature_2m; store.set('sbTempCache', JSON.stringify({ t: this.t, at: Date.now() }));
+                refresh();
+            }
+        } catch (e) { $('temp-note').textContent = '拿不到气温（定位被拒或网络不通）'; }
+    }
+};
+
+/* ================= 翻页物理（照记忆库 iOS 手势配方 §4.6：动量投影 + 带初速度的弹簧 + 橡皮筋） ================= */
+const PROJECT = 0.998 / (1 - 0.998);
+const SPRING_RESPONSE = 0.4, SPRING_DAMPING = 0.86, SPRING_HZ = 240, SPRING_MAX_MS = 620, MAX_OVERSHOOT = 14;
+const reduceMQ = matchMedia('(prefers-reduced-motion: reduce)');
+function springPts(distance, velocity) {
+    const w0 = 2 * Math.PI / SPRING_RESPONSE, z = SPRING_DAMPING, wd = w0 * Math.sqrt(1 - z * z), step = 1 / SPRING_HZ;
+    const sample = v0 => {
+        const B = (v0 + z * w0) / wd, out = [];
+        for (let i = 0; ; i++) {
+            const t = i * step; if (t >= SPRING_MAX_MS / 1000) break;
+            const u = Math.exp(-z * w0 * t) * (Math.cos(wd * t) + B * Math.sin(wd * t));
+            out.push(1 - u); if (t > 0.1 && Math.abs(u) < 0.002) break;
+        }
+        return out;
+    };
+    const over = a => (Math.max.apply(null, a) - 1) * Math.abs(distance);
+    const v0 = distance ? (velocity * 1000) / distance : 0;
+    let pts = sample(v0);
+    if (over(pts) > MAX_OVERSHOOT) {
+        let lo = 0, hi = v0;
+        for (let i = 0; i < 8; i++) { const mid = (lo + hi) / 2, c = sample(mid); if (over(c) > MAX_OVERSHOOT) hi = mid; else { lo = mid; pts = c; } }
+    }
+    pts[pts.length - 1] = 1;
+    return { ms: Math.round(Math.max(120, (pts.length - 1) * step * 1000)), pts };
+}
+function rubber(off, dim) { const x = Math.abs(off), b = (1 - 1 / ((x * 0.55 / dim) + 1)) * dim; return off < 0 ? -b : b; }
+class Pager {
+    constructor(track, axis, size, count, idx, onSettle) {
+        Object.assign(this, { track, axis, size, count, idx, onSettle, anim: null });
+        this.pos = -idx * size; this.apply(this.pos);
+    }
+    apply(p) { this.track.style.transform = this.axis === 'x' ? `translate3d(${p}px,0,0)` : `translate3d(0,${p}px,0)`; }
+    live() { if (!this.anim) return this.pos; const m = new DOMMatrixReadOnly(getComputedStyle(this.track).transform); return this.axis === 'x' ? m.m41 : m.m42; }
+    freeze() { const p = this.live(); if (this.anim) { this.anim.cancel(); this.anim = null; } this.pos = p; this.apply(p); return p; }
+    grab() { this.base = this.freeze(); this.from = Math.max(0, Math.min(this.count - 1, Math.round(-this.base / this.size))); this.track.style.willChange = 'transform'; }
+    drag(dlt) {
+        let p = this.base + dlt; const min = -(this.count - 1) * this.size;
+        if (p > 0) p = rubber(p, this.size); else if (p < min) p = min + rubber(p - min, this.size);
+        this.pos = p; this.apply(p);
+    }
+    release(v) {
+        const proj = this.pos + v * PROJECT;
+        let t = Math.round(-proj / this.size);
+        t = Math.max(this.from - 1, Math.min(this.from + 1, t));   // 一次最多一页
+        this.go(Math.max(0, Math.min(this.count - 1, t)), v);
+    }
+    go(t, v = 0) {
+        const from = this.pos, to = -t * this.size, changed = t !== this.idx;
+        this.idx = t; this.pos = to;
+        const done = () => { this.anim = null; this.track.style.willChange = ''; if (this.onSettle) this.onSettle(t, changed); };
+        if (reduceMQ.matches || Math.abs(from - to) < 0.5 || !this.track.animate) { this.apply(to); done(); return; }
+        const sp = springPts(from - to, v);
+        const prop = this.axis === 'x' ? p => `translate3d(${p}px,0,0)` : p => `translate3d(0,${p}px,0)`;
+        this.apply(to);
+        const a = this.track.animate(sp.pts.map((q, i) => ({ offset: i / (sp.pts.length - 1), transform: prop(from + (to - from) * q) })), { duration: sp.ms, easing: 'linear', fill: 'both' });
+        this.anim = a;
+        a.onfinish = () => { if (this.anim === a) { a.cancel(); done(); } };
+    }
+}
+const clampIdx = (v, n) => Math.max(0, Math.min(n - 1, +v || 0));
+const hPager = new Pager($('h-track'), 'x', W, 2, clampIdx(params.get('page') ?? store.get('sbPage', 1), 2), t => store.set('sbPage', t));
+const facePager = new Pager(facesTrack, 'y', H, FACE_ORDER.length, clampIdx(params.get('face') ?? store.get('sbFace', 1), FACE_ORDER.length), t => store.set('sbFace', t));
+let dotsTimer = 0;
+function showDots(i) {
+    [...dotsL.children].forEach((b, n) => b.classList.toggle('on', n === i));
+    dotsL.classList.add('show'); clearTimeout(dotsTimer);
+}
+function hideDotsSoon() { clearTimeout(dotsTimer); dotsTimer = setTimeout(() => dotsL.classList.remove('show'), 1200); }
+const stackLPager = new Pager(stackL, 'y', H, STACK_L.length, clampIdx(params.get('stack') ?? store.get('sbStack', 0), STACK_L.length), t => { store.set('sbStack', t); showDots(t); hideDotsSoon(); });
+const stackRPager = new Pager(stackR, 'y', H, 1, 0);
+const pagers = [hPager, facePager, stackLPager, stackRPager];
+
+/* ================= 手势：横滑翻页、竖滑换样式/叠放、长按出设置 =================
+   竖着拿（整块转了 90°）时，手指的屏幕位移要换算回画板方向：画板 x = 屏幕 y，画板 y = −屏幕 x */
+function toBoardDelta(dx, dy) { const s = view.s; return view.rot ? [dy / s, -dx / s] : [dx / s, dy / s]; }
+function toBoardPoint(x, y) {
+    const f = getFrame(), s = view.s;
+    if (!view.rot) return [(x - f.w / 2) / s + W / 2, (y - f.h / 2) / s + H / 2];
+    return [(y - f.h / 2) / s + W / 2, -(x - f.w / 2) / s + H / 2];
+}
+let g = null;
+const sheet = $('sheet');
+const sheetOpen = () => sheet.classList.contains('open');
+board.addEventListener('pointerdown', e => {
+    if (sheetOpen() || g || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    const frozen = pagers.filter(p => p.anim);
+    frozen.forEach(p => p.freeze());   // 动画半路按住：就地停住，从这里接着拖（不吞手势）
+    const [bx, by] = toBoardPoint(e.clientX, e.clientY);
+    g = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, lastT: e.timeStamp, last: 0, v: 0, axis: null, pager: null, bx, by, frozen };
+    try { board.setPointerCapture(e.pointerId); } catch (er) {}
+    g.lp = setTimeout(() => { if (g && !g.axis) { const fz = g.frozen; g = null; fz.forEach(p => p.go(Math.round(-p.pos / p.size))); openSheet(); } }, 550);
+});
+board.addEventListener('pointermove', e => {
+    if (!g || e.pointerId !== g.id) return;
+    const [dx, dy] = toBoardDelta(e.clientX - g.x, e.clientY - g.y);
+    if (!g.axis) {
+        if (dx * dx + dy * dy < 25) return;
+        clearTimeout(g.lp);
+        g.axis = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI <= 45 ? 'x' : 'y';
+        if (g.axis === 'x') g.pager = hPager;
+        else if (hPager.idx === 1 && Math.abs(hPager.live() + W) < W / 2) g.pager = facePager;
+        else g.pager = g.bx < 421 ? stackLPager : stackRPager;
+        g.frozen.filter(p => p !== g.pager).forEach(p => p.go(Math.round(-p.pos / p.size)));
+        g.pager.grab();
+        if (g.pager === stackLPager) showDots(stackLPager.from);
+        g.origin = g.axis === 'x' ? dx : dy;
+        g.last = 0; g.lastT = e.timeStamp;
+    }
+    const d = (g.axis === 'x' ? dx : dy) - g.origin;
+    const dt = e.timeStamp - g.lastT;
+    if (dt > 0) { g.v = g.v * 0.4 + ((d - g.last) / dt) * 0.6; g.last = d; g.lastT = e.timeStamp; }
+    g.pager.drag(d);   // 同步写 transform，不排到下一帧
+    if (g.pager === stackLPager) showDots(Math.max(0, Math.min(STACK_L.length - 1, Math.round(-stackLPager.pos / H))));
+});
+function endGesture(e) {
+    if (!g || e.pointerId !== g.id) return;
+    clearTimeout(g.lp);
+    if (g.pager) {
+        if (e.timeStamp - g.lastT > 100) g.v = 0;   // 停住再松手不算甩
+        if (e.type === 'pointercancel') g.v = 0;
+        g.pager.release(g.v);
+        if (g.pager === stackLPager) hideDotsSoon();
+    } else g.frozen.forEach(p => p.go(Math.round(-p.pos / p.size)));
+    g = null;
+}
+board.addEventListener('pointerup', endGesture);
+board.addEventListener('pointercancel', endGesture);
+// 电脑上也能用：滚轮/触控板竖着滚 = 换样式，横着 = 翻页；方向键同理
+let wheelLock = 0;
+board.addEventListener('wheel', e => {
+    if (sheetOpen()) return;   // 设置面板自己能滚，别拦
+    e.preventDefault();
+    if (Date.now() < wheelLock) return;
+    const [dx, dy] = view.rot ? [e.deltaY, -e.deltaX] : [e.deltaX, e.deltaY];
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 12) return;
+    wheelLock = Date.now() + 450;
+    if (Math.abs(dx) > Math.abs(dy)) hPager.go(clampIdx(hPager.idx + Math.sign(dx), 2));
+    else {
+        const p = hPager.idx === 1 ? facePager : stackLPager;
+        p.go(clampIdx(p.idx + Math.sign(dy), p.count));
+        if (p === stackLPager) { showDots(p.idx); hideDotsSoon(); }
+    }
+}, { passive: false });
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { if (sheetOpen()) closeSheet(); else exitStandby(); return; }
+    if (sheetOpen()) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') hPager.go(clampIdx(hPager.idx + (e.key === 'ArrowRight' ? 1 : -1), 2));
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { const p = hPager.idx === 1 ? facePager : stackLPager; p.go(clampIdx(p.idx + (e.key === 'ArrowDown' ? 1 : -1), p.count)); }
+    if (e.key === 'Enter' || e.key === ' ') openSheet();
+});
+
+/* ================= 设置面板 ================= */
+function openSheet() {
+    document.querySelectorAll('#seg-night button').forEach(b => b.classList.toggle('on', b.dataset.v === store.get('sbNight', 'auto')));
+    $('sw-temp').checked = store.get('sbTemp', '0') === '1';
+    const face = hPager.idx === 1 ? FACE_ORDER[facePager.idx] : null, pal = face && PALETTES[face];
+    $('grp-color').style.display = pal ? '' : 'none';
+    if (pal) {
+        $('color-note').textContent = '第一个是截图里的原色，其余为代用色（Apple 的可选色没有截图可对照）';
+        const box = $('swatches'); box.innerHTML = '';
+        pal.forEach((c, i) => {
+            const b = el('button', i === colorIdx(face) ? 'on' : '', box);
+            b.type = 'button'; b.setAttribute('aria-label', '颜色 ' + (i + 1));
+            b.style.background = Array.isArray(c) ? `linear-gradient(135deg, ${c[0]} 50%, ${c[1]} 50%)` : typeof c === 'number'
+                ? `linear-gradient(90deg, rgb(89,62,93), rgb(201,142,210))` : c;
+            if (typeof c === 'number') b.style.filter = c ? `hue-rotate(${c}deg)` : '';
+            b.addEventListener('click', () => { store.set('sbColor_' + face, i); refresh(); box.querySelectorAll('button').forEach((x, n) => x.classList.toggle('on', n === i)); });
+        });
+    }
+    sheet.classList.add('open');
+}
+function closeSheet() { sheet.classList.remove('open'); }
+document.querySelectorAll('#seg-night button').forEach(b => b.addEventListener('click', () => {
+    store.set('sbNight', b.dataset.v);
+    document.querySelectorAll('#seg-night button').forEach(x => x.classList.toggle('on', x === b));
+    refresh();
+}));
+$('sw-temp').addEventListener('change', e => { store.set('sbTemp', e.target.checked ? '1' : '0'); if (e.target.checked) weather.load(true); else refresh(); });
+$('btn-done').addEventListener('click', closeSheet);
+$('btn-exit').addEventListener('click', () => exitStandby());
+sheet.addEventListener('pointerdown', e => { if (e.target === sheet) closeSheet(); });
+
+/* ================= 进出：iPhone 是横放就进、竖起来就退；网页里只在「横着进来的」情况下竖起来才退
+   （竖着进来说明开了竖排方向锁定，画面本来就是转过来的，竖着是正常状态，不能一进来就退出） ================= */
+function exitStandby() { location.href = './'; }
+const enteredLandscape = !view.rot;
+window.addEventListener('resize', () => { if (enteredLandscape && view.rot && !sheetOpen()) exitStandby(); });
+function hint(msg, ms) { const h = $('hint'); h.textContent = msg; h.classList.add('show'); setTimeout(() => h.classList.remove('show'), ms); }
+
+/* ================= 屏幕常亮：这页本来就是放着看的 ================= */
+let wakeLock = null;
+async function keepAwake() {
+    if (!('wakeLock' in navigator) || wakeLock || document.visibilityState !== 'visible') return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } catch (e) { wakeLock = null; }
+}
+['click', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, keepAwake, true));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); refresh(); } });
+window.addEventListener('pageshow', refresh);
+
+/* ================= 启动 ================= */
+if (params.get('freeze') === '1') board.classList.add('freeze');
+refresh();
+scheduleMinute();
+keepAwake();
+weather.load(false);
+if (!params.has('t')) hint('左右滑切换，上下滑换样式；长按：设置 / 退出', 3500);
+window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet };
+</script>
+</body>
+</html>
