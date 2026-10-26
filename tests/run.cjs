@@ -341,12 +341,26 @@ function layoutChecks(tag, g) {
   await c.vshot(path.join(__dirname, 'shots', 'sb852-clock.png'));
   c.close();
 
+  /* ---------- 待机显示：电脑 1707×1067（16:10，不是 852:393）→ 不能有黑边 ---------- */
+  c = await open(1707, 1067, 1.5);
+  await c.goto(SB); await c.ev('localStorage.clear()');
+  await c.goto(SB + '?t=2026-10-26T21:23:10&page=1&face=3'); await sleep(700);
+  const dk = await c.ev(`(() => { const b = document.getElementById('board').getBoundingClientRect(), bg = document.querySelector('.face-solar > .abs').getBoundingClientRect();
+    return { b: [b.left, b.top, b.right, b.bottom].map(Math.round), bg: [bg.left, bg.top, bg.right, bg.bottom].map(Math.round), scroll: document.scrollingElement.scrollHeight - innerHeight }; })()`);
+  check('电脑 16:10：画板铺满窗口、日光背景铺满（以前上下各一条黑边）、页面不能滚',
+    dk.b.join() === '0,0,1707,1067' && dk.bg.join() === '0,0,1707,1067' && dk.scroll === 0, dk);
+  check('电脑上有「全屏」入口（双击 / F / 设置里的按钮）', await c.ev("getComputedStyle(document.getElementById('btn-fs')).display !== 'none'"));
+  check('页面无 JS 报错', c.errors.length === 0, c.errors);
+  c.close();
+
   /* ---------- 待机显示：竖着拿（开了竖排锁定）390×844 → 整块转 90°，手势方向跟着换算 ---------- */
   c = await open(390, 844, 3);
+  await c.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 59, topMax: 59, bottom: 34, bottomMax: 34, left: 0, leftMax: 0, right: 0, rightMax: 0 } });
   await c.goto(SB); await c.ev("localStorage.clear(); localStorage.setItem('sbPage', '0')");
   await c.goto(SB + '?t=2026-10-26T14:54:10'); await sleep(700);
-  const pv = await c.ev("(() => { const b = document.getElementById('board').getBoundingClientRect(); return { rot: __sb.view.rot, s: __sb.view.s, l: b.left, t: b.top, r: b.right, b: b.bottom }; })()");
-  check('竖屏：画板转 90°、等比缩放后完整在屏幕内', pv.rot && pv.l >= -0.5 && pv.t >= -0.5 && pv.r <= 390.5 && pv.b <= 844.5 && pv.s > 0.9, pv);
+  const pv = await c.ev("(() => { const b = document.getElementById('board').getBoundingClientRect(), k = document.querySelector('#stack-l .core').getBoundingClientRect(); return { rot: __sb.view.rot, s: __sb.view.s, l: b.left, t: b.top, r: b.right, b: b.bottom, coreTop: k.top, coreBottom: k.bottom }; })()");
+  check('竖屏：画板转 90° 铺满整个屏幕', pv.rot && Math.abs(pv.l) < 0.5 && Math.abs(pv.t) < 0.5 && Math.abs(pv.r - 390) < 0.5 && Math.abs(pv.b - 844) < 0.5, pv);
+  check('竖屏：内容让开顶部 59pt 状态栏（状态栏网页藏不掉），不被它压住', pv.coreTop >= 58.5 && pv.coreBottom <= 844.5 && pv.s > 0.9, pv);
   // 转过来后，画面的「向左滑」= 手指在屏幕上往上划
   await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 650 }] });
   for (let i = 1; i <= 8; i++) { await c.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 195, y: 650 - 50 * i }] }); await sleep(16); }

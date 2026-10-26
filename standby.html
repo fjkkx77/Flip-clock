@@ -16,7 +16,9 @@
       仿 iPhone「待机显示」（StandBy，iOS 17 起）。
       参照物：用户 iPhone 14 Pro 上的 15 张原生截图（2556×1179 = 852×393pt × 3）。
       下面所有尺寸、位置、颜色都以 pt 为单位，是从那批截图上逐个量出来的（量法和原始读数见 PROJECT_STATUS.md「待机显示」一节）。
-      整块画面是一张 852×393 的画板，按屏幕等比缩放；竖着拿时整块转 90°（和主页「强制横屏」同一个方向）。
+      内容是一块 852×393 的「核心区」，按屏幕等比缩放后居中；画板本身铺满整个屏幕（背景、滑动的页都铺满），
+      屏幕比例不是 852:393 时多出来的地方由背景填上，不再留黑边（2026-10-26 用户在电脑/Safari 上看到上下黑边）。
+      竖着拿时整块转 90°（和主页「强制横屏」同一个方向），并让开顶部状态栏——竖屏时网页没法隐藏状态栏（Apple 文档只给了三种样式）。
       交互照 Apple 使用手册：左右滑切换小组件/时钟，上下滑切换样式；长按出设置（Apple 是长按进编辑）。
     -->
     <style>
@@ -29,9 +31,15 @@
         body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none;
                font-family: var(--sans); color: #fff; -webkit-tap-highlight-color: transparent; }
 
-        #board { position: fixed; left: 0; top: 0; width: 852px; height: 393px; transform-origin: 0 0; overflow: hidden; background: #000; }
+        /* --bw/--bh = 画板（整个屏幕）的尺寸，--ox/--oy = 核心区左上角，都由 fit() 实测后写入，单位是缩放前的 pt */
+        #board { position: fixed; left: 0; top: 0; width: var(--bw, 852px); height: var(--bh, 393px); transform-origin: 0 0; overflow: hidden; background: #000; }
         .track { position: absolute; left: 0; top: 0; }
-        .page { position: absolute; top: 0; width: 852px; height: 393px; overflow: hidden; }
+        .page { position: absolute; top: 0; left: 0; width: var(--bw, 852px); height: var(--bh, 393px); overflow: hidden; }
+        .core { position: absolute; left: var(--ox, 0px); top: var(--oy, 0px); width: 852px; height: 393px; }
+        #p-clock { left: var(--bw, 852px); }
+        #clip-l { left: 0; width: calc(var(--ox, 0px) + 412px); }
+        #clip-r { left: calc(var(--ox, 0px) + 430px); right: 0; }
+        .spage-r { left: calc(-1 * (var(--ox, 0px) + 430px)); }
         .abs { position: absolute; left: 0; top: 0; }
         svg.layer { position: absolute; left: 0; top: 0; width: 852px; height: 393px; overflow: visible; }
         svg text { font-family: var(--sans); }
@@ -68,7 +76,7 @@
         .stack-dots.show { opacity: 1; transition: opacity 0.15s; }
         .stack-dots b { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--dot-off); margin-bottom: 6.3px; }
         .stack-dots b.on { background: var(--dot-on); }
-        .clip { position: absolute; top: 0; height: 393px; overflow: hidden; }
+        .clip { position: absolute; top: 0; height: var(--bh, 393px); overflow: hidden; }
 
         /* ---------- 漂浮（Float）：各位数字慢慢浮动；截图里同一个数字两次的倾斜角度不同（-1.7° / +3.6°），推断是在动 ---------- */
         .fl { position: absolute; mix-blend-mode: screen; transform-origin: 50% 50%; animation: float1 9s ease-in-out infinite alternate; }
@@ -114,13 +122,13 @@
 <div id="board">
     <div class="track" id="h-track">
         <!-- 第 1 页：小组件（左右两个叠放） -->
-        <div class="page" id="p-widgets" style="left:0">
-            <div class="clip" id="clip-l" style="left:0;width:412px"><div class="track" id="stack-l"></div></div>
-            <div class="clip" id="clip-r" style="left:430px;width:422px"><div class="track" id="stack-r"></div></div>
-            <div class="stack-dots" id="dots-l"></div>
+        <div class="page" id="p-widgets">
+            <div class="clip" id="clip-l"><div class="track" id="stack-l"></div></div>
+            <div class="clip" id="clip-r"><div class="track" id="stack-r"></div></div>
+            <div class="core" style="pointer-events:none"><div class="stack-dots" id="dots-l"></div></div>
         </div>
         <!-- 第 2 页：时钟（5 种样式上下切换） -->
-        <div class="page" id="p-clock" style="left:852px">
+        <div class="page" id="p-clock">
             <div class="track" id="faces"></div>
         </div>
     </div>
@@ -134,7 +142,7 @@
                 <div class="row" id="row-temp"><span>显示气温<small id="temp-note">“数字”样式右上角；要用到定位</small></span><input type="checkbox" class="sw" id="sw-temp"></div>
             </div>
             <div class="grp" id="grp-color"><div class="row"><span>颜色<small id="color-note"></small></span></div><div class="swatches" id="swatches"></div></div>
-            <div class="btns"><button type="button" class="danger" id="btn-exit">退出待机显示</button><button type="button" id="btn-done">完成</button></div>
+            <div class="btns"><button type="button" class="danger" id="btn-exit">退出待机显示</button><button type="button" id="btn-fs">全屏</button><button type="button" id="btn-done">完成</button></div>
         </div>
     </div>
 </div>
@@ -223,13 +231,29 @@ function getFrame() {
     const vv = window.visualViewport;
     return vv ? { w: vv.width, h: vv.height } : { w: innerWidth, h: innerHeight };
 }
-const view = { rot: false, s: 1 };
+// 安全区（状态栏、灵动岛、主屏指示条）用一个探针元素读 env()
+const insetProbe = document.createElement('div');
+insetProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+    'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+document.body.appendChild(insetProbe);
+function safeTop() { return parseFloat(getComputedStyle(insetProbe).paddingTop) || 0; }
+const view = { rot: false, s: 1, bw: W, bh: H, ox: 0, oy: 0 };
+let onFit = [];
 function fit() {
     const f = getFrame(), rot = f.h > f.w;
-    const bw = rot ? f.h : f.w, bh = rot ? f.w : f.h;
-    const s = Math.min(bw / W, bh / H);
-    view.rot = rot; view.s = s;
-    board.style.transform = `translate(${f.w / 2}px, ${f.h / 2}px) rotate(${rot ? 90 : 0}deg) scale(${s}) translate(${-W / 2}px, ${-H / 2}px)`;
+    const sw = rot ? f.h : f.w, sh = rot ? f.w : f.h;    // 屏幕在画板方向上的长、短边（CSS px）
+    // 只在「竖着拿、整块转过来」时让开状态栏：它在屏幕顶上 = 画板的左边。
+    // 横屏时 iPhone 不显示状态栏，灵动岛那侧原生待机显示也是照样画过去的，所以横屏不让
+    const insL = rot ? safeTop() : 0;
+    const s = Math.min((sw - insL) / W, sh / H);
+    const bw = sw / s, bh = sh / s;
+    view.rot = rot; view.s = s; view.bw = bw; view.bh = bh;
+    view.ox = insL / s + (bw - insL / s - W) / 2; view.oy = (bh - H) / 2;
+    const st = board.style;
+    st.setProperty('--bw', bw + 'px'); st.setProperty('--bh', bh + 'px');
+    st.setProperty('--ox', view.ox + 'px'); st.setProperty('--oy', view.oy + 'px');
+    st.transform = `translate(${f.w / 2}px, ${f.h / 2}px) rotate(${rot ? 90 : 0}deg) scale(${s}) translate(${-bw / 2}px, ${-bh / 2}px)`;
+    onFit.forEach(fn => fn());
 }
 window.addEventListener('resize', fit);
 if (window.visualViewport) visualViewport.addEventListener('resize', fit);
@@ -260,6 +284,23 @@ function stretchRatio(weight, family, stretch) {
         t.setAttribute('style', `font: ${weight} 100px ${family}; font-stretch: ${st}`); probeSvg.appendChild(t); const w = t.getComputedTextLength(); t.remove(); return w; };
     const a = mk('100%'), b = mk(stretch);
     return (stretchCache[key] = a > 0 && b > 0 ? b / a : 1);
+}
+/* 挑系统字体真正支持的宽度：WebKit 把 font-stretch 映射成 SF 的宽度档（37.5 超压缩 … 75 窄体 … 125 宽体 … 150 特宽，
+   见 WebKit changeset 272073），但它自己的测试写着「iOS 上系统字体不是每档都支持」——上一版用的 50% 在 iPhone 上就没生效，
+   字形还是正常宽度，再被横向压扁，笔画就细了（用户 2026-10-26 真机截图）。
+   所以这里逐档实测：拉伸后字宽真的变了的才算支持，挑最接近目标比例的那档，剩下的差距才用横向缩放补 */
+const pickCache = {};
+function pickStretch(weight, family, want) {
+    const key = weight + family + want.toFixed(3);
+    if (pickCache[key]) return pickCache[key];
+    const cands = want < 1 ? ['37.5%', '50%', '62.5%', '75%', '87.5%'] : ['112.5%', '125%', '150%'];
+    let best = { stretch: '100%', ratio: 1 };
+    for (const c of cands) {
+        const r = stretchRatio(weight, family, c);
+        if (Math.abs(r - 1) < 0.02) continue;   // 没生效：这台设备的系统字体没有这一档
+        if (Math.abs(Math.log(r / want)) < Math.abs(Math.log(best.ratio / want))) best = { stretch: c, ratio: r };
+    }
+    return (pickCache[key] = best);
 }
 // 在 svg 里放一段字，让它的墨迹框按 opts 对齐：x/xAlign(l|c|r)、y/yAlign(t|c|b|base)；
 // capH + capRef = 「capRef 这个字的墨迹高度应当是 capH」，据此反推字号（截图量的是墨迹高度）。
@@ -445,25 +486,35 @@ const PALETTES = {
     solar: [0, 150, 210, 300]   // 色相旋转角：0 = 截图里的紫色
 };
 const colorIdx = k => Math.min(+store.get('sbColor_' + k, 0) || 0, (PALETTES[k] || [0]).length - 1);
+/* 大号数字的字宽：截图里量到过的数字直接用实测墨迹宽（三个时间 14:54 / 02:29 / 21:23 凑出来的），
+   没截到的数字按字体自己的比例推。字形先挑系统字体真支持的宽度档（pickStretch），差的再横向缩放 */
+function digitGlyphs(str, cfg) {
+    const k = ink(cfg.capRef, `${cfg.weight} 100px ${SANS}`), size = cfg.capH / ((k.b - k.t) / 100);
+    const nat = ch => { const g = ink(ch, `${cfg.weight} ${size}px ${SANS}`); return g.r - g.l; };
+    const want = cfg.table[cfg.ref] / nat(cfg.ref);              // 截图里的字比正常宽度窄/宽多少
+    const pick = pickStretch(cfg.weight, SANS, want);
+    return { size, stretch: pick.stretch, widths: [...str].map(ch => cfg.table[ch] !== undefined ? cfg.table[ch] : nat(ch) * want) };
+}
+// 数字样式：截图实测墨迹宽（字高 282）。0/2/9 来自 02:29，1/4/5 来自 14:54，2/1/3 来自 21:23；6/7/8 没截到
+const DIGITAL_W = { 0: 101.7, 1: 69, 2: 97, 3: 100.6, 4: 110, 5: 97, 9: 100 };
 function buildDigital(host) {
     const s = svgLayer(host);
     const digits = [0, 1, 2, 3].map(() => makeText(s));
-    const dots = [sv('circle', { cx: 319, cy: 122, r: 22.15 }, s), sv('circle', { cx: 319, cy: 273.3, r: 22.15 }, s)];
+    const dots = [sv('circle', { cy: 122, r: 22.15 }, s), sv('circle', { cy: 273.3, r: 22.15 }, s)];
     const date1 = makeText(s), date2 = makeText(s);
-    const CELL = [126.9, 239.5, 404.0, 514.2];
     faceUpdaters.push(d => {
         const night = board.classList.contains('night');
         const col = night ? '#9b0000' : PALETTES.digital[colorIdx('digital')];
         const str = pad2(d.getHours()) + pad2(d.getMinutes());
-        // 字宽按「0」的墨迹宽 101.7 定横向缩放（夜间截图 02:29 的 0 实测），四位共用同一个缩放，保证字形比例一致
-        // 字高：「1」「4」实测 56.7→338.7（282）；字宽按「0」的墨迹宽 101.7 定横向缩放（夜间 02:29 实测），四位共用同一个缩放
-        const base = placeText(digits[0], '0', { weight: 800, capH: 282, capRef: '1', stretch: '50%', inkW: 101.7, x: 0, xAlign: 'c', y: 338.7, yAlign: 'base' });
-        const r = stretchRatio(800, SANS, '50%');
-        [...str].forEach((ch, i) => {
-            const g = ink(ch, `800 ${base.size}px ${SANS}`);
-            placeText(digits[i], ch, { weight: 800, size: base.size, stretch: '50%', inkW: (g.r - g.l) * r * base.sx, x: CELL[i], xAlign: 'c', y: 338.7, yAlign: 'base', fill: col });
-        });
-        dots.forEach(c => c.setAttribute('style', 'fill:' + col));
+        // 排法：整串靠右，最后一位墨迹右缘在 567（三张截图 566.6 / 569 / 564.2），右边日期块左缘固定 622。
+        // 墨迹间距实测：数字之间 ≈11.5，数字→冒号 ≈12，冒号→数字 ≈12.3；冒号两个直径 44.3 的圆点
+        const G = digitGlyphs(str, { weight: 700, capH: 282, capRef: '1', ref: '0', table: DIGITAL_W });
+        const w = G.widths, R = [];
+        R[3] = 567; R[2] = R[3] - w[3] - 11.5;
+        const colonR = R[2] - w[2] - 12.3, colonL = colonR - 44.3;
+        R[1] = colonL - 12; R[0] = R[1] - w[1] - 11.5;
+        [...str].forEach((ch, i) => placeText(digits[i], ch, { weight: 700, size: G.size, stretch: G.stretch, inkW: w[i], x: R[i], xAlign: 'r', y: 338.7, yAlign: 'base', fill: col }));
+        dots.forEach(c => { c.setAttribute('cx', colonL + 22.15); c.setAttribute('style', 'fill:' + col); });
         // 右上角：「26 周一」第一行（31pt，日期白、星期跟数字同色，基线 77）；第二行气温（开了才有，基线 112.8）
         date1.textContent = '';
         const a = sv('tspan', { style: 'fill:var(--dg-date)' }, date1); a.textContent = d.getDate() + ' ';
@@ -592,35 +643,39 @@ function buildWorld(host) {
 /* ================= 时钟样式 4：日光（Solar）：左侧一团椭圆光晕 + 宽体数字 =================
    背景沿水平方向实测（白天）：左缘中间 (89,62,93) → 700pt 处 (201,142,210)；竖直方向同样的亮度在更远处（椭圆，纵横比约 1.4）。
    夜间：(58,0,0) → 黑，纵横比约 1.7。光晕会不会随太阳位置移动——截图看不出来，这里是静止的 */
+// 日光样式：截图实测墨迹宽（字高 148）。1/4/5 来自 14:54，0/2/8 来自 02:28，2/1/3 来自 21:23；6/7/9 没截到
+const SOLAR_W = { 0: 135.9, 1: 67.5, 2: 120.5, 3: 123, 4: 135, 5: 124.4, 8: 132.4 };
 function buildSolar(host) {
-    const bg = el('div', 'abs', host, 'width:852px;height:393px');
+    // 背景铺满整个屏幕（不只核心区），光晕中心在屏幕左缘、核心区的竖直中线上
+    const bg = el('div', 'abs', host.parentElement, 'width:var(--bw);height:var(--bh)');
+    host.parentElement.insertBefore(bg, host);
     const s = svgLayer(host);
     const defs = sv('defs', {}, s);
     const lg = sv('linearGradient', { id: 'solarText', gradientUnits: 'userSpaceOnUse', x1: 123, y1: 0, x2: 729, y2: 0 }, defs);
     const st1 = sv('stop', { offset: 0 }, lg), st2 = sv('stop', { offset: 1 }, lg);
-    const hh = makeText(s), mm = makeText(s);
+    const solarDigits = [0, 1, 2, 3].map(() => makeText(s));
     const dots = [sv('circle', { r: 14.9 }, s), sv('circle', { r: 14.9 }, s)];
     faceUpdaters.push(d => {
         const night = board.classList.contains('night'), hue = PALETTES.solar[colorIdx('solar')];
+        const at = `0px ${view.oy + 196.5}px`;
         bg.style.background = night
-            ? 'radial-gradient(ellipse 700px 1190px at 0px 196.5px, #3a0000 0%, #360000 7%, #320000 14%, #2a0000 21%, #260000 29%, #1e0000 36%, #170000 43%, #100000 50%, #0a0000 57%, #080000 64%, #040000 71%, #020000 79%, #010101 100%)'
-            : 'radial-gradient(ellipse 700px 980px at 0px 196.5px, rgb(89,62,93) 0%, rgb(93,64,95) 7%, rgb(101,70,104) 14%, rgb(113,79,116) 21%, rgb(129,90,132) 29%, rgb(143,100,148) 36%, rgb(158,110,162) 43%, rgb(172,120,177) 50%, rgb(182,126,187) 57%, rgb(190,131,195) 64%, rgb(195,134,201) 71%, rgb(197,136,203) 79%, rgb(200,140,208) 86%, rgb(201,142,210) 100%)';
+            ? `radial-gradient(ellipse 700px 1190px at ${at}, #3a0000 0%, #360000 7%, #320000 14%, #2a0000 21%, #260000 29%, #1e0000 36%, #170000 43%, #100000 50%, #0a0000 57%, #080000 64%, #040000 71%, #020000 79%, #010101 100%)`
+            : `radial-gradient(ellipse 700px 980px at ${at}, rgb(89,62,93) 0%, rgb(93,64,95) 7%, rgb(101,70,104) 14%, rgb(113,79,116) 21%, rgb(129,90,132) 29%, rgb(143,100,148) 36%, rgb(158,110,162) 43%, rgb(172,120,177) 50%, rgb(182,126,187) 57%, rgb(190,131,195) 64%, rgb(195,134,201) 71%, rgb(197,136,203) 79%, rgb(200,140,208) 86%, rgb(201,142,210) 100%)`;
         bg.style.filter = !night && hue ? `hue-rotate(${hue}deg)` : '';
         s.style.filter = !night && hue ? `hue-rotate(${hue}deg)` : '';
         st1.setAttribute('style', 'stop-color:' + (night ? '#ce0001' : '#f796fe'));
         st2.setAttribute('style', 'stop-color:' + (night ? '#ce0001' : '#fda2fe'));
-        // 字高：「1」「4」实测 123.5→271.4（148），按基线 271.4 放
-        const fill = 'url(#solarText)', o = { weight: 500, capH: 148, capRef: '1', stretch: '125%', y: 271.4, yAlign: 'base', fill };
-        // 先按目标高度排一遍拿到宽度，再整体居中在 426；「0」的墨迹宽对齐到 135.9（夜间 02:28 实测）
-        const z = placeText(hh, '0', { ...o, inkW: 135.9, x: 0, xAlign: 'l' });
-        const H2 = pad2(d.getHours()), M2 = pad2(d.getMinutes());
-        const a = placeText(hh, H2, { ...o, x: 0, xAlign: 'l', inkW: null });
-        const b = placeText(mm, M2, { ...o, x: 0, xAlign: 'l', inkW: null });
-        const sx = z.sx, wa = (a.inkR - a.inkL) * sx, wb = (b.inkR - b.inkL) * sx;
-        const gapL = 15.1, colon = 29.8, gapR = 19.1, total = wa + gapL + colon + gapR + wb, left = 426 - total / 2;
-        placeText(hh, H2, { ...o, inkW: wa, x: left, xAlign: 'l' });
-        placeText(mm, M2, { ...o, inkW: wb, x: left + wa + gapL + colon + gapR, xAlign: 'l' });
-        const ccx = left + wa + gapL + colon / 2;
+        // 字高：「1」「4」实测 123.5→271.4（148），按基线 271.4 放；四位各自按实测墨迹宽，整串居中在 426（三张截图都是）。
+        // 墨迹间距实测：数字之间 ≈15.3，数字→冒号 ≈14.4，冒号→数字 19.1（三张都是 19.1）；冒号圆点直径 29.8
+        const str = pad2(d.getHours()) + pad2(d.getMinutes());
+        const G = digitGlyphs(str, { weight: 500, capH: 148, capRef: '1', ref: '0', table: SOLAR_W });
+        const w = G.widths, dd = 15.3, gapL = 14.4, colon = 29.8, gapR = 19.1;
+        const total = w[0] + dd + w[1] + gapL + colon + gapR + w[2] + dd + w[3];
+        const L = []; L[0] = 426 - total / 2; L[1] = L[0] + w[0] + dd;
+        const ccx = L[1] + w[1] + gapL + colon / 2;
+        L[2] = ccx + colon / 2 + gapR; L[3] = L[2] + w[2] + dd;
+        const fill = 'url(#solarText)';
+        [...str].forEach((ch, i) => placeText(solarDigits[i], ch, { weight: 500, size: G.size, stretch: G.stretch, inkW: w[i], x: L[i], xAlign: 'l', y: 271.4, yAlign: 'base', fill }));
         dots[0].setAttribute('cx', ccx); dots[0].setAttribute('cy', 159.7);
         dots[1].setAttribute('cx', ccx); dots[1].setAttribute('cy', 235.2);
         dots.forEach(c => c.setAttribute('style', 'fill:' + fill));
@@ -630,61 +685,81 @@ function buildSolar(host) {
 /* ================= 时钟样式 5：漂浮（Float）：圆体粗数字互相叠压，叠压处「滤色」变亮 =================
    白天：第 1、3 位 #0062BD，第 2、4 位 #52A2EA，叠压处实测 (79,191,250) ≈ 两色滤色 (82,198,250)；冒号灰 #BEBEBE 也是滤色叠上去的。
    夜间：四位都是 #990000，叠压处 (214,0,0) 正好是 153 和 153 滤色的结果。
-   整串宽度实测：白天 14:54 占 67→783、夜间 02:28 占 64→785——按宽度撑满（字高随之变），中心约 424.4 */
+   排法（三张截图 14:54 / 02:28 / 21:23 量出来的）：
+   · 字形是正常宽度的圆体（不压窄），数字之间按字体本身的字宽排、再收紧（负字距），所以墨迹叠压多少看是哪两个字：
+     21:23 里「2」「1」叠 39pt、「2」「3」叠 36pt；中间两位之间不叠，留 16pt 给冒号。
+   · 整串墨迹宽 ≈714.7（三张 707 / 716 / 721），中心 ≈425.5，字高随宽度变。
+   · 冒号两个直径 69.5 的圆点，压在第 2、3 位之间，竖直位置 ±66。
+   字距和中缝不能写死成像素（字体不同、字宽就不同），在这台设备上用 21:23 的实测叠压量反推（calibrateFloat） */
+const FLOAT_REF = { str: '2123', ov12: 39 / 707, gap23: 16 / 707, ov34: 36 / 707 };
+function floatLayout(str, t, gap) {   // 字号 100 下，按字宽 + 字距 t 排，第 2 位后面多加 gap；返回每位的墨迹左右
+    let x = 0; const out = [];
+    [...str].forEach((ch, i) => {
+        const g = ink(ch, `900 100px ${ROUNDED}`);
+        out.push({ ch, l: x + g.l, r: x + g.r, g });
+        x += g.adv + t + (i === 1 ? gap : 0);
+    });
+    return out;
+}
+let floatCal = null;
+function calibrateFloat() {
+    if (floatCal) return floatCal;
+    const span = L => L[3].r - L[0].l;
+    const bisect = (f, lo, hi) => { for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) > 0) lo = m; else hi = m; } return (lo + hi) / 2; };
+    let t = -10, gap = 0;
+    for (let k = 0; k < 3; k++) {
+        // 叠压越多 → t 越负；f(t) = 实际叠压比例 − 目标（t 往大走叠压变少，所以 f 递减）
+        t = bisect(tt => { const L = floatLayout(FLOAT_REF.str, tt, gap); return ((L[0].r - L[1].l) + (L[2].r - L[3].l)) / 2 / span(L) - (FLOAT_REF.ov12 + FLOAT_REF.ov34) / 2; }, -60, 30);
+        gap = bisect(gg => { const L = floatLayout(FLOAT_REF.str, t, gg); return FLOAT_REF.gap23 - (L[2].l - L[1].r) / span(L); }, -60, 80);
+    }
+    return (floatCal = { t, gap });
+}
 function buildFloat(host) {
     const wrap = el('div', 'abs', host, 'width:852px;height:393px');
-    const parts = [0, 1, 2, 3, 4].map(i => {
+    const parts = [0, 1, 2, 3].map(i => {
         const box = el('div', 'fl k' + (i + 1), wrap);
         const s = document.createElementNS(NS, 'svg'); s.setAttribute('style', 'position:absolute;left:0;top:0;overflow:visible'); box.appendChild(s);
-        return { box, s, t: i === 2 ? null : makeText(s) };
+        return { box, s, t: makeText(s) };
     });
-    const colonDots = [sv('circle', { r: 34.5 }, parts[2].s), sv('circle', { r: 34.5 }, parts[2].s)];
+    const colonBox = el('div', 'fl k5', wrap);
+    const colonSvg = document.createElementNS(NS, 'svg'); colonSvg.setAttribute('style', 'position:absolute;left:0;top:0;overflow:visible'); colonBox.appendChild(colonSvg);
+    const colonDots = [sv('circle', { r: 34.75 }, colonSvg), sv('circle', { r: 34.75 }, colonSvg)];
     faceUpdaters.push(d => {
         const night = board.classList.contains('night'), pal = PALETTES.float[colorIdx('float')];
         const str = pad2(d.getHours()) + pad2(d.getMinutes());
-        // 「0」的墨迹 宽:高 = 184:265（夜间 02:28 实测，高含圆底的溢出）→ 先按这个比例定横向缩放，再整体缩放到宽度 718
-        const cap0 = 265, k0 = ink('0', `900 100px ${ROUNDED}`), sz0 = cap0 / ((k0.b - k0.t) / 100), sx = 184 / ((k0.r - k0.l) * sz0 / 100);
-        const glyph = [...str].map(ch => { const g = ink(ch, `900 ${sz0}px ${ROUNDED}`); return { ch, w: (g.r - g.l) * sx, g }; });
-        const overlap = 10, colonW = 69, colonGap = -2;
-        const widths = [glyph[0].w, glyph[1].w, colonW, glyph[2].w, glyph[3].w];
-        const total = widths[0] + widths[1] - overlap + colonGap + colonW + colonGap + widths[3] + widths[4] - overlap;
-        const k = 718 / total, cy = 196.7;
-        let x = 424.4 - 718 / 2;
-        const lefts = [];
-        lefts[0] = x; x += widths[0] * k - overlap * k;
-        lefts[1] = x; x += widths[1] * k + colonGap * k;
-        lefts[2] = x; x += colonW * k + colonGap * k;
-        lefts[3] = x; x += widths[3] * k - overlap * k;
-        lefts[4] = x;
+        const cal = calibrateFloat(), L = floatLayout(str, cal.t, cal.gap);
+        const k = 714.7 / (L[3].r - L[0].l), x0 = 425.5 - 714.7 / 2 - L[0].l * k, cy = 196.7;
+        const one = ink('1', `900 100px ${ROUNDED}`), capH = (one.b - one.t) * k;   // 用「1」的高度当字高，按它竖直居中
         const colors = night ? ['#990000', '#990000', '#990000', '#990000'] : [pal[0], pal[1], pal[0], pal[1]];
-        [0, 1, 3, 4].forEach((pi, n) => {
-            const p = parts[pi], gw = widths[pi] * k, size = sz0 * k;
-            p.box.style.cssText = `left:${lefts[pi]}px;top:${cy - cap0 * k / 2}px;width:${gw}px;height:${cap0 * k}px`;
-            placeText(p.t, glyph[n].ch, { family: 'var(--rounded)', weight: 900, size, inkW: gw, x: 0, xAlign: 'l', y: cap0 * k / 2, yAlign: 'c', fill: colors[n] });
+        L.forEach((q, i) => {
+            const p = parts[i], left = x0 + q.l * k, wd = (q.r - q.l) * k, top = cy - capH / 2 - 12, ht = capH + 24;
+            p.box.style.cssText = `left:${left}px;top:${top}px;width:${wd}px;height:${ht}px`;
+            placeText(p.t, q.ch, { family: 'var(--rounded)', weight: 900, size: 100 * k, x: 0, xAlign: 'l', y: 12 + capH, yAlign: 'base', fill: colors[i] });
         });
-        const cw = colonW * k;
-        parts[2].box.style.cssText = `left:${lefts[2]}px;top:${cy - cap0 * k / 2}px;width:${cw}px;height:${cap0 * k}px`;
-        // 冒号两点：白天中心实测 y 130.1 / 259.8（相对整串中心 ∓65），按同一缩放
-        colonDots[0].setAttribute('cx', cw / 2); colonDots[0].setAttribute('cy', cap0 * k / 2 - 65 * k);
-        colonDots[1].setAttribute('cx', cw / 2); colonDots[1].setAttribute('cy', cap0 * k / 2 + 65 * k);
-        colonDots.forEach(c => { c.setAttribute('r', 34.5 * k); c.setAttribute('style', 'fill:' + (night ? '#4a2420' : '#bebebe')); });
+        const ccx = x0 + (L[1].r + L[2].l) / 2 * k;
+        colonBox.style.cssText = `left:${ccx - 35}px;top:${cy - 101}px;width:70px;height:202px`;
+        colonDots[0].setAttribute('cx', 35); colonDots[0].setAttribute('cy', 101 - 66);
+        colonDots[1].setAttribute('cx', 35); colonDots[1].setAttribute('cy', 101 + 66);
+        colonDots.forEach(c => c.setAttribute('style', 'fill:' + (night ? '#4a2420' : '#c4c4c4')));
     });
 }
 
 /* ================= 页面拼装 ================= */
 const FACE_ORDER = ['digital', 'analog', 'world', 'solar', 'float'];   // MacStories iOS 17 评测列的顺序
 const facesTrack = $('faces');
+// 每一页铺满整个画板（页与页按画板宽/高排开），内容画在页里居中的 852×393 核心区上
+const pageAt = (parent, cls, i) => el('div', 'page ' + cls, parent, `top:calc(var(--bh) * ${i})`);
 FACE_ORDER.forEach((k, i) => {
-    const f = el('div', 'page face-' + k, facesTrack, `left:0;top:${i * H}px`);
-    ({ digital: buildDigital, analog: buildAnalog, world: buildWorld, solar: buildSolar, float: buildFloat })[k](f);
+    const core = el('div', 'core', pageAt(facesTrack, 'face-' + k, i));
+    ({ digital: buildDigital, analog: buildAnalog, world: buildWorld, solar: buildSolar, float: buildFloat })[k](core);
 });
 const STACK_L = ['round', 'day', 'square'];   // 截图里左边叠放有 4 个圆点：第 1 个推断是圆表，第 2 个日历、第 4 个方表，第 3 个没截到，不编
 const stackL = $('stack-l'), stackR = $('stack-r');
 STACK_L.forEach((k, i) => {
-    const f = el('div', 'page', stackL, `left:0;top:${i * H}px;width:412px`);
-    ({ round: buildRoundClock, day: buildDayWidget, square: buildSquareClock })[k](f);
+    const core = el('div', 'core', pageAt(stackL, '', i));
+    ({ round: buildRoundClock, day: buildDayWidget, square: buildSquareClock })[k](core);
 });
-{ const f = el('div', 'page', stackR, 'left:-430px;top:0'); buildMonthWidget(f); }
+{ const core = el('div', 'core', pageAt(stackR, 'spage-r', 0)); buildMonthWidget(core); }
 const dotsL = $('dots-l');
 STACK_L.forEach(() => el('b', '', dotsL));
 dotsL.style.top = (196.7 - (STACK_L.length * 12.3 - 6.3) / 2) + 'px';
@@ -757,11 +832,14 @@ function springPts(distance, velocity) {
     return { ms: Math.round(Math.max(120, (pts.length - 1) * step * 1000)), pts };
 }
 function rubber(off, dim) { const x = Math.abs(off), b = (1 - 1 / ((x * 0.55 / dim) + 1)) * dim; return off < 0 ? -b : b; }
+// 页宽/页高跟着屏幕走（sizeFn 每次现取），转屏、改窗口大小后 onFit 里按新尺寸把每个翻页器摆回当前页
 class Pager {
-    constructor(track, axis, size, count, idx, onSettle) {
-        Object.assign(this, { track, axis, size, count, idx, onSettle, anim: null });
-        this.pos = -idx * size; this.apply(this.pos);
+    constructor(track, axis, sizeFn, count, idx, onSettle) {
+        Object.assign(this, { track, axis, sizeFn, count, idx, onSettle, anim: null });
+        this.pos = -idx * this.size; this.apply(this.pos);
+        onFit.push(() => { if (this.anim) { this.anim.cancel(); this.anim = null; } this.pos = -this.idx * this.size; this.apply(this.pos); });
     }
+    get size() { return this.sizeFn(); }
     apply(p) { this.track.style.transform = this.axis === 'x' ? `translate3d(${p}px,0,0)` : `translate3d(0,${p}px,0)`; }
     live() { if (!this.anim) return this.pos; const m = new DOMMatrixReadOnly(getComputedStyle(this.track).transform); return this.axis === 'x' ? m.m41 : m.m42; }
     freeze() { const p = this.live(); if (this.anim) { this.anim.cancel(); this.anim = null; } this.pos = p; this.apply(p); return p; }
@@ -791,25 +869,28 @@ class Pager {
     }
 }
 const clampIdx = (v, n) => Math.max(0, Math.min(n - 1, +v || 0));
-const hPager = new Pager($('h-track'), 'x', W, 2, clampIdx(params.get('page') ?? store.get('sbPage', 1), 2), t => store.set('sbPage', t));
-const facePager = new Pager(facesTrack, 'y', H, FACE_ORDER.length, clampIdx(params.get('face') ?? store.get('sbFace', 1), FACE_ORDER.length), t => store.set('sbFace', t));
+const PW = () => view.bw, PH = () => view.bh;
+const hPager = new Pager($('h-track'), 'x', PW, 2, clampIdx(params.get('page') ?? store.get('sbPage', 1), 2), t => store.set('sbPage', t));
+const facePager = new Pager(facesTrack, 'y', PH, FACE_ORDER.length, clampIdx(params.get('face') ?? store.get('sbFace', 1), FACE_ORDER.length), t => store.set('sbFace', t));
 let dotsTimer = 0;
 function showDots(i) {
     [...dotsL.children].forEach((b, n) => b.classList.toggle('on', n === i));
     dotsL.classList.add('show'); clearTimeout(dotsTimer);
 }
 function hideDotsSoon() { clearTimeout(dotsTimer); dotsTimer = setTimeout(() => dotsL.classList.remove('show'), 1200); }
-const stackLPager = new Pager(stackL, 'y', H, STACK_L.length, clampIdx(params.get('stack') ?? store.get('sbStack', 0), STACK_L.length), t => { store.set('sbStack', t); showDots(t); hideDotsSoon(); });
-const stackRPager = new Pager(stackR, 'y', H, 1, 0);
+const stackLPager = new Pager(stackL, 'y', PH, STACK_L.length, clampIdx(params.get('stack') ?? store.get('sbStack', 0), STACK_L.length), t => { store.set('sbStack', t); showDots(t); hideDotsSoon(); });
+const stackRPager = new Pager(stackR, 'y', PH, 1, 0);
 const pagers = [hPager, facePager, stackLPager, stackRPager];
 
 /* ================= 手势：横滑翻页、竖滑换样式/叠放、长按出设置 =================
    竖着拿（整块转了 90°）时，手指的屏幕位移要换算回画板方向：画板 x = 屏幕 y，画板 y = −屏幕 x */
 function toBoardDelta(dx, dy) { const s = view.s; return view.rot ? [dy / s, -dx / s] : [dx / s, dy / s]; }
+// 屏幕坐标 → 核心区坐标（852×393 那套，和量截图的坐标一致）
 function toBoardPoint(x, y) {
     const f = getFrame(), s = view.s;
-    if (!view.rot) return [(x - f.w / 2) / s + W / 2, (y - f.h / 2) / s + H / 2];
-    return [(y - f.h / 2) / s + W / 2, -(x - f.w / 2) / s + H / 2];
+    const b = !view.rot ? [(x - f.w / 2) / s + view.bw / 2, (y - f.h / 2) / s + view.bh / 2]
+        : [(y - f.h / 2) / s + view.bw / 2, -(x - f.w / 2) / s + view.bh / 2];
+    return [b[0] - view.ox, b[1] - view.oy];
 }
 let g = null;
 const sheet = $('sheet');
@@ -831,7 +912,7 @@ board.addEventListener('pointermove', e => {
         clearTimeout(g.lp);
         g.axis = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI <= 45 ? 'x' : 'y';
         if (g.axis === 'x') g.pager = hPager;
-        else if (hPager.idx === 1 && Math.abs(hPager.live() + W) < W / 2) g.pager = facePager;
+        else if (hPager.idx === 1 && Math.abs(hPager.live() + view.bw) < view.bw / 2) g.pager = facePager;
         else g.pager = g.bx < 421 ? stackLPager : stackRPager;
         g.frozen.filter(p => p !== g.pager).forEach(p => p.go(Math.round(-p.pos / p.size)));
         g.pager.grab();
@@ -843,7 +924,7 @@ board.addEventListener('pointermove', e => {
     const dt = e.timeStamp - g.lastT;
     if (dt > 0) { g.v = g.v * 0.4 + ((d - g.last) / dt) * 0.6; g.last = d; g.lastT = e.timeStamp; }
     g.pager.drag(d);   // 同步写 transform，不排到下一帧
-    if (g.pager === stackLPager) showDots(Math.max(0, Math.min(STACK_L.length - 1, Math.round(-stackLPager.pos / H))));
+    if (g.pager === stackLPager) showDots(Math.max(0, Math.min(STACK_L.length - 1, Math.round(-stackLPager.pos / view.bh))));
 });
 function endGesture(e) {
     if (!g || e.pointerId !== g.id) return;
@@ -918,7 +999,33 @@ sheet.addEventListener('pointerdown', e => { if (e.target === sheet) closeSheet(
 function exitStandby() { location.href = './'; }
 const enteredLandscape = !view.rot;
 window.addEventListener('resize', () => { if (enteredLandscape && view.rot && !sheetOpen()) exitStandby(); });
-function hint(msg, ms) { const h = $('hint'); h.textContent = msg; h.classList.add('show'); setTimeout(() => h.classList.remove('show'), ms); }
+let hintTimer = 0;
+function hint(msg, ms) { const h = $('hint'); h.textContent = msg; h.classList.add('show'); clearTimeout(hintTimer); hintTimer = setTimeout(() => h.classList.remove('show'), ms); }
+
+/* ================= 沉浸：电脑/iPad 能真全屏（浏览器的标签栏、地址栏都没了），iPhone 不行 =================
+   iPhone：元素全屏只有 iPad 有（MDN 兼容数据）；manifest 的 display: fullscreen iOS 也不认，只认 standalone。
+   竖屏时状态栏网页隐藏不了（Apple 文档里 status-bar-style 只有 default / black / black-translucent 三种，没有隐藏）；
+   横屏时 iPhone 本来就不显示状态栏——所以要满屏，就得关掉竖排方向锁定、把手机真的横过来 */
+const canFS = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+function toggleFullscreen() {
+    const d = document, on = d.fullscreenElement || d.webkitFullscreenElement;
+    try {
+        const p = on ? (d.exitFullscreen || d.webkitExitFullscreen).call(d)
+            : (d.documentElement.requestFullscreen || d.documentElement.webkitRequestFullscreen).call(d.documentElement);
+        if (p && p.catch) p.catch(() => {});
+    } catch (e) {}
+}
+$('btn-fs').style.display = canFS ? '' : 'none';
+$('btn-fs').addEventListener('click', () => { closeSheet(); toggleFullscreen(); });
+board.addEventListener('dblclick', () => { if (canFS && !sheetOpen()) toggleFullscreen(); });
+document.addEventListener('keydown', e => { if ((e.key === 'f' || e.key === 'F') && canFS && !sheetOpen()) toggleFullscreen(); });
+const isIOS = /iP(hone|od|ad)/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1) || /iPhone|iPod/.test(navigator.userAgent);
+function entryHint() {
+    if (params.has('t')) return;
+    if (view.rot && isIOS && !canFS) hint('竖屏时网页藏不掉状态栏：关掉「竖排方向锁定」把手机横过来，就是满屏', 6000);
+    else if (canFS && matchMedia('(pointer: fine)').matches) hint('双击或按 F 全屏；长按（或按回车）：设置 / 退出', 4000);
+    else hint('左右滑切换，上下滑换样式；长按：设置 / 退出', 3500);
+}
 
 /* ================= 屏幕常亮：这页本来就是放着看的 ================= */
 let wakeLock = null;
@@ -936,8 +1043,17 @@ refresh();
 scheduleMinute();
 keepAwake();
 weather.load(false);
-if (!params.has('t')) hint('左右滑切换，上下滑换样式；长按：设置 / 退出', 3500);
-window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet };
+onFit.push(refresh);   // 屏幕尺寸变了：日光的光晕中心等按核心区位置重算
+entryHint();
+// 诊断：地址加 ?debug，左上角显示这台设备实际挑中的字宽档、漂浮的字距校准、画板尺寸——真机字形不对时截这张图就能看出原因
+if (params.has('debug')) {
+    const fam = SANS, n0 = (w, cap) => { const k = ink('1', `${w} 100px ${fam}`), sz = cap / ((k.b - k.t) / 100), g = ink('0', `${w} ${sz}px ${fam}`); return g.r - g.l; };
+    const dg = pickStretch(700, fam, DIGITAL_W[0] / n0(700, 282)), so = pickStretch(500, fam, SOLAR_W[0] / n0(500, 148));
+    const tries = ['37.5%', '50%', '62.5%', '75%', '87.5%', '112.5%', '125%', '150%'].map(c => c + '→' + stretchRatio(700, fam, c).toFixed(2)).join(' ');
+    const box = el('div', '', document.body, 'position:fixed;left:8px;top:8px;z-index:99;background:rgba(0,0,0,.8);color:#0f0;font:11px/1.4 monospace;padding:6px;white-space:pre;pointer-events:none');
+    box.textContent = `数字 选 ${dg.stretch}（比 ${dg.ratio.toFixed(2)}）  日光 选 ${so.stretch}（比 ${so.ratio.toFixed(2)}）\n各档实测字宽比：${tries}\n漂浮校准 ${JSON.stringify(calibrateFloat())}\nview ${JSON.stringify(view)}\nUA ${navigator.userAgent}`;
+}
+window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet, pickStretch, calibrateFloat };
 </script>
 </body>
 </html>
