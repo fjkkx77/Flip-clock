@@ -1221,17 +1221,21 @@
         // 按钮不能挪进那 21pt 里（Apple HIG：控件要在安全区内），所以把底栏并到顶栏——两种横屏都只剩一条栏，卡片一样大
         const topLeft = $('top-left'), iconGroup = document.querySelector('.bottom-bar-wrap .icon-group'), bottomWrap = document.querySelector('.bottom-bar-wrap');
         const topSpacer = document.querySelector('.top-bar .spacer');
+        const touchPrimary = matchMedia('(pointer: coarse)');   // 主输入是手指 = 手机/平板；是鼠标 = 电脑
+        if (touchPrimary.addEventListener) touchPrimary.addEventListener('change', () => placeIcons());
         function placeIcons() {
             const land = isLandscapeNow();
             if (land && iconGroup.parentElement !== topLeft) topLeft.appendChild(iconGroup);
             else if (!land && iconGroup.parentElement !== bottomWrap) bottomWrap.appendChild(iconGroup);
             bottomWrap.style.display = land ? 'none' : '';
             topSpacer.style.width = land ? topLeft.offsetWidth + 'px' : '';   // 右边垫一样宽，中间的导航才在正中
-            // 横屏：顶栏浮在上层（position:absolute 不占位置），位置按包装器的安全区留出来（灵动岛那侧不能压）
-            document.body.classList.toggle('land-overlay', land);
+            // 横屏 + 触屏（手机/平板）：顶栏浮在上层（position:absolute 不占位置），位置按包装器的安全区留出来（灵动岛那侧不能压）。
+            // 电脑（主输入是鼠标）不用浮层：用户 2026-10-26 看过上线效果，手机满意、电脑要回到之前的样子
+            const overlay = land && touchPrimary.matches;
+            document.body.classList.toggle('land-overlay', overlay);
             // 这里不能用后面第 9 节的 appWrapper / topBarEl 常量：第一次调用在脚本初始化中途，那时它们还没声明
             const cs = getComputedStyle($('app-wrapper'));
-            Object.assign(document.querySelector('.top-bar:not(.bottom-bar-wrap)').style, land ? { left: cs.paddingLeft, right: cs.paddingRight, top: cs.paddingTop } : { left: '', right: '', top: '' });
+            Object.assign(document.querySelector('.top-bar:not(.bottom-bar-wrap)').style, overlay ? { left: cs.paddingLeft, right: cs.paddingRight, top: cs.paddingTop } : { left: '', right: '', top: '' });
             requestAnimationFrame(() => queueFit());   // 第一次是在脚本初始化中途调的，那时 queueFit 用到的变量还没声明，放到下一帧
         }
         window.addEventListener('resize', autoHideRotateBtn);

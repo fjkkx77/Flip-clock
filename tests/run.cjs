@@ -291,8 +291,10 @@ function layoutChecks(tag, g) {
   /* ---------- 桌面大屏：时钟不再被像素上限卡小 ---------- */
   for (const [w, h] of [[1920, 1080], [2560, 1440], [1280, 600]]) {
     c = await open(w, h, 1);
+    await c.send('Emulation.setTouchEmulationEnabled', { enabled: false });   // 电脑：主输入是鼠标（不关的话会被当成触屏）
     await c.goto(U); await fresh(c);
     const g = await c.ev(GEO);
+    check(`桌面 ${w}×${h}：鼠标设备不用横屏浮层（用户要电脑保持原样）`, await c.ev("!document.body.classList.contains('land-overlay') && getComputedStyle(document.querySelector('.top-bar')).position !== 'absolute'"));
     layoutChecks(`桌面 ${w}×${h}`, g);
     if (w >= 1920) check(`桌面 ${w}×${h} 时钟宽度 ≥ 屏宽 50%`, g.clock.w / w >= 0.5, (g.clock.w / w).toFixed(2));
     await c.vshot(path.join(__dirname, 'shots', `d${w}.png`));
