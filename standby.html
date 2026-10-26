@@ -137,7 +137,7 @@
         <div class="panel" id="panel">
             <h2>待机显示</h2>
             <div class="grp">
-                <div class="row"><span>夜间模式<small id="night-note">自动：22:00–7:00 变红（网页拿不到环境光，用时间代替）；双击屏幕临时切换</small></span>
+                <div class="row"><span>夜间模式<small id="night-note">自动：<span id="night-range">22:30–6:00</span> 变红（网页拿不到环境光，用时间代替）；双击屏幕临时切换</small></span>
                     <div class="seg" id="seg-night"><button data-v="auto">自动</button><button data-v="on">打开</button><button data-v="off">关闭</button></div></div>
                 <div class="row" id="row-temp"><span>显示气温<small id="temp-note">“数字”样式右上角；要用到定位</small></span><input type="checkbox" class="sw" id="sw-temp"></div>
             </div>
@@ -797,16 +797,22 @@ function scheduleMinute() {
     setTimeout(() => { refresh(); scheduleMinute(); }, 60000 - (d.getSeconds() * 1000 + d.getMilliseconds()) + 30);
 }
 
-/* ================= 夜间模式：Apple 按环境光自动切（网页拿不到环境光传感器），这里按时间 22:00–7:00 ================= */
+/* ================= 夜间模式：Apple 按环境光自动切（网页拿不到环境光传感器），这里按时间 22:30–6:00（用户 2026-10-26 定的） ================= */
+const NIGHT_FROM = [22, 30], NIGHT_TO = [6, 0];   // 改时段只改这一行，判定、双击的到期时间、提示文字都跟着走
+const hm = ([h, m]) => h + ':' + pad2(m);
+const NIGHT_TEXT = hm(NIGHT_FROM) + '–' + hm(NIGHT_TO);
+$('night-range').textContent = NIGHT_TEXT;
 const nightMode = () => params.get('night') === '1' ? 'on' : params.get('night') === '0' ? 'off' : store.get('sbNight', 'auto');
-const autoNightAt = d => { const h = d.getHours(); return h >= 22 || h < 7; };
-// 双击临时切换（只在「自动」下用）：管到下一个自动切换点（7:00 或 22:00）为止，过了就回到按时间
+const minOfDay = d => d.getHours() * 60 + d.getMinutes();
+const FROM_MIN = NIGHT_FROM[0] * 60 + NIGHT_FROM[1], TO_MIN = NIGHT_TO[0] * 60 + NIGHT_TO[1];
+const autoNightAt = d => { const m = minOfDay(d); return m >= FROM_MIN || m < TO_MIN; };
+// 双击临时切换（只在「自动」下用）：管到下一个自动切换点（夜里到 6:00、白天到 22:30）为止，过了就回到按时间
 function nextBoundary(d) {
     const t = new Date(d); t.setSeconds(0, 0);
-    const h = d.getHours();
-    if (h >= 22) { t.setDate(t.getDate() + 1); t.setHours(7, 0); }
-    else if (h < 7) t.setHours(7, 0);
-    else t.setHours(22, 0);
+    const m = minOfDay(d);
+    if (m >= FROM_MIN) { t.setDate(t.getDate() + 1); t.setHours(NIGHT_TO[0], NIGHT_TO[1]); }
+    else if (m < TO_MIN) t.setHours(NIGHT_TO[0], NIGHT_TO[1]);
+    else t.setHours(NIGHT_FROM[0], NIGHT_FROM[1]);
     return t.getTime();
 }
 function nightOverride(d) {
@@ -826,7 +832,7 @@ function toggleNightByTap() {
         else store.set('sbNightOverride', JSON.stringify({ on, until: nextBoundary(d) }));
     } else store.set('sbNight', on ? 'on' : 'off');
     refresh();
-    const back = m === 'auto' && on !== autoNightAt(d) ? `（到 ${on ? '7:00' : '22:00'} 自动恢复）` : '';
+    const back = m === 'auto' && on !== autoNightAt(d) ? `（到 ${on ? hm(NIGHT_TO) : hm(NIGHT_FROM)} 自动恢复）` : '';
     hint((on ? '夜间模式' : '白天模式') + back + ' · 双击切换', 2200);
 }
 function syncNight(d) {

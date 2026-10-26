@@ -4,7 +4,7 @@
 
 ## 一句话
 `index.html` 翻页时钟（时钟 / 番茄钟 / 计时器）+ `standby.html` 仿 iPhone 待机显示，GitHub Pages 部署：push 到 `main` 即上线
-（https://fjkkx77.github.io/Flip-clock/ ）。改完先跑 `node tests/run.cjs`（148 条），必须全绿再推。
+（https://fjkkx77.github.io/Flip-clock/ ）。改完先跑 `node tests/run.cjs`（150 条），必须全绿再推。
 
 ## 结构上不能动错的几处
 1. **布局**：`.view-container` 三行网格 `上附属 | 卡片 | 下附属`，上下行等高 → 卡片永远在正中。
@@ -61,8 +61,8 @@
 - 窄体/宽体字：Safari 的 canvas 量不了 font-stretch，`placeText()` 先量正常宽度，乘 SVG 实测的拉伸比，再横向缩放到截图墨迹宽度。
 - 调休上班日红线：只有 2025、2026 两年（国务院通知）；**每年 11 月新通知出来后要补 `MAKEUP_WORKDAYS`**，没数据的年份不标。
 - 农历表和 index.html 是同一份拷贝，测试逐日比对两边结果。
-- 夜间模式：Apple 靠环境光，网页拿不到（Safari 无 AmbientLightSensor），用 22:00–7:00 代替，可在设置里改成常开/常关。
-  **双击（轻点两下 ≤350ms）切白天/夜间**：「自动」下只是临时切换，存 `sbNightOverride`，管到下一个 7:00/22:00；常开/常关下直接翻设置。
+- 夜间模式：Apple 靠环境光，网页拿不到（Safari 无 AmbientLightSensor），用 22:30–6:00 代替（用户 2026-10-26 定的；改时段只改 standby.html 里的 `NIGHT_FROM/NIGHT_TO` 一行），可在设置里改成常开/常关。
+  **双击（轻点两下 ≤350ms）切白天/夜间**：「自动」下只是临时切换，存 `sbNightOverride`，管到下一个 6:00/22:30；常开/常关下直接翻设置。
   双击被它占了，电脑全屏改成 F 键 / 设置里的按钮。
 - 指针样式的外框贴屏幕边（离边 49/24pt 是 Apple 的量，外框大小由屏幕决定），手机上 1:1 不变；其余样式上下多出的是黑背景，不放大（放大要裁掉左右内容，用户同意不动）。
 - 气温（数字样式右上角）默认关：要定位 + Open-Meteo（无需密钥，CORS 放行；国内不翻墙能否访问未验证）。

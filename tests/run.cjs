@@ -355,12 +355,21 @@ function layoutChecks(tag, g) {
   check('隔 0.5 秒点两下不算双击（不切换）', !(await c.ev(NIGHT)));
   await sleep(500); await tap(426, 200); await sleep(120); await tap(430, 205); await sleep(300);
   const ov = await c.ev("JSON.parse(localStorage.getItem('sbNightOverride'))");
-  check('「自动」下白天双击 → 临时切到夜间，管到 22:00', (await c.ev(NIGHT)) && ov && ov.on === true && new Date(ov.until).getHours() === 22 && (await c.ev("localStorage.getItem('sbNight')")) === 'auto', ov);
+  check('「自动」下白天双击 → 临时切到夜间，管到 22:30', (await c.ev(NIGHT)) && ov && ov.on === true && new Date(ov.until).getHours() === 22 && new Date(ov.until).getMinutes() === 30 && (await c.ev("localStorage.getItem('sbNight')")) === 'auto', ov);
   await sleep(500); await tap(426, 200); await sleep(120); await tap(426, 200); await sleep(300);
   check('再双击 → 回到白天、临时切换清掉', !(await c.ev(NIGHT)) && (await c.ev("localStorage.getItem('sbNightOverride')")) === 'null');
   check('双击没有误触发翻页/样式切换', (await c.ev('[__sb.pagers.hPager.idx, __sb.pagers.facePager.idx]')).join() === '1,3');
   await c.goto(SB + '?t=2026-10-26T02:30:00'); await sleep(600);
   check('「自动」在凌晨 2:30 → 夜间模式', await c.ev("document.getElementById('board').classList.contains('night')"));
+  // 夜间时段 22:30–6:00（用户 2026-10-26 改的）：边界前后一分钟各测一下
+  const edges = [];
+  for (const [t, want] of [['22:29', false], ['22:30', true], ['05:59', true], ['06:00', false]]) {
+    await c.goto(SB + `?t=2026-10-26T${t}:10`); await sleep(400);
+    edges.push([t, (await c.ev("document.getElementById('board').classList.contains('night')")) === want]);
+  }
+  check('夜间时段 22:30–6:00：22:29 白天、22:30 夜间、5:59 夜间、6:00 白天', edges.every(e => e[1]), edges);
+  check('设置里写的时段跟着改了', (await c.ev("document.getElementById('night-range').textContent")) === '22:30–6:00');
+  await c.goto(SB + '?t=2026-10-26T02:30:00'); await sleep(400);
   check('重开后记住上次停在哪一页、哪个样式', (await c.ev('[__sb.pagers.hPager.idx, __sb.pagers.facePager.idx]')).join() === '1,3');
   const lunarSb = await c.ev("Array.from({ length: 800 }, (_, i) => __sb.lunarText(new Date(2025, 0, 1 + i * 3)))");
   check('待机显示页没有 JS 报错', c.errors.length === 0, c.errors);
