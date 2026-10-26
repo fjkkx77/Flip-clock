@@ -201,6 +201,7 @@
 
         .spacer { width: var(--icon-size); height: var(--icon-size); pointer-events: none; }
         .icon-group { display: flex; gap: 10px; }
+        .top-left { display: flex; gap: 10px; align-items: center; }
 
         .nav-menu { display: flex; gap: clamp(8px, 2vw, 40px); }
         /* 热区至少 44×44（Apple HIG 的最小可点尺寸）；以前只有 30×26 */
@@ -418,9 +419,11 @@
     <div id="app-wrapper">
 
         <div class="top-bar">
+            <div class="top-left" id="top-left">
             <button type="button" class="icon-btn" id="settings-btn" aria-label="设置" title="设置">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12,22C6.49,22 2,17.51 2,12C2,6.49 6.49,2 12,2C17.51,2 22,6.49 22,12C22,13.1 21.1,14 20,14C19.66,14 19.34,13.88 19.09,13.66C18.84,13.43 18.5,13.29 18.12,13.29C17.29,13.29 16.63,13.96 16.63,14.79C16.63,15.2 16.79,15.57 17.06,15.86C17.38,16.2 17.56,16.66 17.56,17.16C17.56,18.46 16.5,19.5 15.21,19.5H15V22H12M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20V17.5C13.6,17.5 14.88,16.2 14.88,14.63C14.88,14.12 14.71,13.67 14.43,13.34C14.11,12.96 13.91,12.47 13.91,11.95C13.91,10.63 15,9.57 16.33,9.57C16.85,9.57 17.31,9.75 17.65,10.05C17.97,10.32 18.4,10.5 18.88,10.5C20.14,10.5 21.16,9.47 21.16,8.21C21.16,4.78 17.05,4 12,4M6.5,10C5.67,10 5,9.33 5,8.5C5,7.67 5.67,7 6.5,7C7.33,7 8,7.67 8,8.5C8,9.33 7.33,10 6.5,10M9.5,6C8.67,6 8,5.33 8,4.5C8,3.67 8.67,3 9.5,3C10.33,3 11,3.67 11,4.5C11,5.33 10.33,6 9.5,6M14.5,6C13.67,6 13,5.33 13,4.5C13,3.67 13.67,3 14.5,3C15.33,3 16,3.67 16,4.5C16,5.33 15.33,6 14.5,6Z"/></svg>
             </button>
+            </div>
             <div class="nav-menu" role="tablist">
                 <button type="button" class="nav-item" role="tab" data-tab="pomodoro">番茄钟</button>
                 <button type="button" class="nav-item active" role="tab" data-tab="clock" aria-selected="true">时钟</button>
@@ -1194,7 +1197,7 @@
             wantLandscape = !document.body.classList.contains('force-landscape');
             store.set('forceLandscape', wantLandscape ? '1' : '0');
             document.body.classList.toggle('force-landscape', wantLandscape);
-            syncFrame(); queueFit(); resetIdleTimer();
+            syncFrame(); placeIcons(); resetIdleTimer();
         });
 
         function autoHideRotateBtn() {
@@ -1203,6 +1206,21 @@
             rotateBtn.style.display = physicalLandscape ? 'none' : 'flex';
             document.body.classList.toggle('force-landscape', !physicalLandscape && wantLandscape);
             syncFrame();
+            placeIcons();
+        }
+        // 横屏时（真横屏、强制横屏都算）底部那排图标挪到左上角，和设置按钮排成一行，底栏整条不占地方。
+        // 以前两种横屏卡片一大一小（用户 2026-10-26 报）：真横屏时 iPhone 底部有 21pt 的主屏指示条安全区，
+        // 底栏要垫在它上面，卡片又得上下对称居中，于是上下各多留 21pt，卡片矮了 42pt；强制横屏时那条安全区在侧边，不占高度。
+        // 按钮不能挪进那 21pt 里（Apple HIG：控件要在安全区内），所以把底栏并到顶栏——两种横屏都只剩一条栏，卡片一样大
+        const topLeft = $('top-left'), iconGroup = document.querySelector('.bottom-bar-wrap .icon-group'), bottomWrap = document.querySelector('.bottom-bar-wrap');
+        const topSpacer = document.querySelector('.top-bar .spacer');
+        function placeIcons() {
+            const land = isLandscapeNow();
+            if (land && iconGroup.parentElement !== topLeft) topLeft.appendChild(iconGroup);
+            else if (!land && iconGroup.parentElement !== bottomWrap) bottomWrap.appendChild(iconGroup);
+            bottomWrap.style.display = land ? 'none' : '';
+            topSpacer.style.width = land ? topLeft.offsetWidth + 'px' : '';   // 右边垫一样宽，中间的导航才在正中
+            requestAnimationFrame(() => queueFit());   // 第一次是在脚本初始化中途调的，那时 queueFit 用到的变量还没声明，放到下一帧
         }
         window.addEventListener('resize', autoHideRotateBtn);
         autoHideRotateBtn(); // 初始化检测

@@ -249,6 +249,28 @@ function layoutChecks(tag, g) {
   check('横屏闲置 1 分钟 → 自动进入待机显示', /standby\.html$/.test(await c.ev('location.pathname')), await c.ev('location.pathname'));
   c.close();
 
+  /* ---------- 两种横屏（真横过来 / 点旋转按钮）卡片一样大：iPhone 14 Pro 实测安全区 ----------
+     以前真横屏 106×143、强制横屏 137×185（用户截图），差的 42pt 正好是底部主屏指示条 21pt × 上下对称 */
+  const CARD = "(() => { const b = document.querySelector('.view-container.active .clock-group').getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]; })()";
+  c = await open(852, 393, 3);
+  await c.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, topMax: 0, bottom: 21, bottomMax: 21, left: 59, leftMax: 59, right: 59, rightMax: 59 } });
+  await c.goto(U); await c.ev("localStorage.clear(); localStorage.setItem('autoImmersive', '0')"); await c.goto(U); await sleep(900);
+  const physCard = await c.ev(CARD), physIcons = await c.ev("[...document.querySelectorAll('#top-left .icon-btn')].filter(b => b.offsetParent).length");
+  layoutChecks('真横屏(安全区)/时钟', await c.ev(GEO));
+  const navC = await c.ev("(() => { const b = document.querySelector('.nav-menu').getBoundingClientRect(); return (b.left + b.right) / 2; })()");
+  check('横屏：图标并到顶行左边、导航仍在正中(±2)', physIcons >= 3 && Math.abs(navC - 426) <= 2, { physIcons, navC });
+  check('页面无 JS 报错', c.errors.length === 0, c.errors);
+  c.close();
+  c = await open(393, 852, 3);
+  await c.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 59, topMax: 59, bottom: 34, bottomMax: 34, left: 0, leftMax: 0, right: 0, rightMax: 0 } });
+  await c.goto(U); await c.ev("localStorage.clear(); localStorage.setItem('autoImmersive', '0'); localStorage.setItem('forceLandscape', '1')"); await c.goto(U); await sleep(900);
+  const forcedCard = await c.ev(CARD);
+  check('真横屏和强制横屏卡片一样大(±2)', Math.abs(physCard[0] - forcedCard[1]) <= 2 && Math.abs(physCard[1] - forcedCard[0]) <= 2, { physCard, forcedCard });
+  await c.ev("document.getElementById('rotate-btn').click()"); await sleep(700);
+  check('转回竖屏：图标回到底栏', await c.ev("document.querySelector('.bottom-bar-wrap .icon-group') !== null && getComputedStyle(document.querySelector('.bottom-bar-wrap')).display !== 'none'"));
+  check('页面无 JS 报错', c.errors.length === 0, c.errors);
+  c.close();
+
   /* ---------- 真横屏手机 844×390：倒计时输入框在场时卡片别缩太小 ---------- */
   c = await open(844, 390, 3);
   await c.goto(U); await c.ev("localStorage.clear(); localStorage.setItem('tab','timer'); localStorage.setItem('timerMode','down')"); await c.goto(U); await sleep(900);
@@ -327,6 +349,16 @@ function layoutChecks(tag, g) {
   check('换颜色生效并记住（日光样式）', (await c.ev("localStorage.getItem('sbColor_solar')")) === '1');
   await c.ev("document.querySelectorAll('#swatches button')[0].click(); document.getElementById('btn-done').click()"); await sleep(300);
   check('点「完成」收起设置', !(await c.ev("document.getElementById('sheet').classList.contains('open')")));
+  const tap = async (x, y) => { await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(40); await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+  const NIGHT = "document.getElementById('board').classList.contains('night')";
+  await sleep(500); await tap(426, 200); await sleep(500); await tap(426, 200); await sleep(300);
+  check('隔 0.5 秒点两下不算双击（不切换）', !(await c.ev(NIGHT)));
+  await sleep(500); await tap(426, 200); await sleep(120); await tap(430, 205); await sleep(300);
+  const ov = await c.ev("JSON.parse(localStorage.getItem('sbNightOverride'))");
+  check('「自动」下白天双击 → 临时切到夜间，管到 22:00', (await c.ev(NIGHT)) && ov && ov.on === true && new Date(ov.until).getHours() === 22 && (await c.ev("localStorage.getItem('sbNight')")) === 'auto', ov);
+  await sleep(500); await tap(426, 200); await sleep(120); await tap(426, 200); await sleep(300);
+  check('再双击 → 回到白天、临时切换清掉', !(await c.ev(NIGHT)) && (await c.ev("localStorage.getItem('sbNightOverride')")) === 'null');
+  check('双击没有误触发翻页/样式切换', (await c.ev('[__sb.pagers.hPager.idx, __sb.pagers.facePager.idx]')).join() === '1,3');
   await c.goto(SB + '?t=2026-10-26T02:30:00'); await sleep(600);
   check('「自动」在凌晨 2:30 → 夜间模式', await c.ev("document.getElementById('board').classList.contains('night')"));
   check('重开后记住上次停在哪一页、哪个样式', (await c.ev('[__sb.pagers.hPager.idx, __sb.pagers.facePager.idx]')).join() === '1,3');
@@ -349,7 +381,11 @@ function layoutChecks(tag, g) {
     return { b: [b.left, b.top, b.right, b.bottom].map(Math.round), bg: [bg.left, bg.top, bg.right, bg.bottom].map(Math.round), scroll: document.scrollingElement.scrollHeight - innerHeight }; })()`);
   check('电脑 16:10：画板铺满窗口、日光背景铺满（以前上下各一条黑边）、页面不能滚',
     dk.b.join() === '0,0,1707,1067' && dk.bg.join() === '0,0,1707,1067' && dk.scroll === 0, dk);
-  check('电脑上有「全屏」入口（双击 / F / 设置里的按钮）', await c.ev("getComputedStyle(document.getElementById('btn-fs')).display !== 'none'"));
+  check('电脑上有「全屏」入口（F 键 / 设置里的按钮）', await c.ev("getComputedStyle(document.getElementById('btn-fs')).display !== 'none'"));
+  const anFrame = await c.ev(`(() => { const pg = document.querySelector('.face-analog').getBoundingClientRect(), ls = [...document.querySelectorAll('.face-analog > svg line')].map(l => l.getBoundingClientRect());
+    return { top: Math.round(Math.min(...ls.map(r => r.top)) - pg.top), bottom: Math.round(Math.max(...ls.map(r => r.bottom)) - pg.top), left: Math.round(Math.min(...ls.map(r => r.left)) - pg.left), right: Math.round(Math.max(...ls.map(r => r.right)) - pg.left), s: __sb.view.s }; })()`);
+  check('电脑 16:10：指针表盘外框贴着屏幕边（离边 24/49pt × 缩放，不再上下空一大块）',
+    Math.abs(anFrame.top - 24 * anFrame.s) <= 4 && Math.abs(1067 - anFrame.bottom - 24 * anFrame.s) <= 4 && Math.abs(anFrame.left - 49 * anFrame.s) <= 4, anFrame);
   check('页面无 JS 报错', c.errors.length === 0, c.errors);
   c.close();
 

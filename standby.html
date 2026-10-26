@@ -137,7 +137,7 @@
         <div class="panel" id="panel">
             <h2>待机显示</h2>
             <div class="grp">
-                <div class="row"><span>夜间模式<small id="night-note">自动：22:00–7:00 变红（网页拿不到环境光，用时间代替）</small></span>
+                <div class="row"><span>夜间模式<small id="night-note">自动：22:00–7:00 变红（网页拿不到环境光，用时间代替）；双击屏幕临时切换</small></span>
                     <div class="seg" id="seg-night"><button data-v="auto">自动</button><button data-v="on">打开</button><button data-v="off">关闭</button></div></div>
                 <div class="row" id="row-temp"><span>显示气温<small id="temp-note">“数字”样式右上角；要用到定位</small></span><input type="checkbox" class="sw" id="sw-temp"></div>
             </div>
@@ -540,24 +540,43 @@ function rayToRect(ang, hw, hh) {
     const ux = Math.abs(Math.sin(ang)), uy = Math.abs(Math.cos(ang));
     return Math.min(ux > 1e-9 ? hw / ux : Infinity, uy > 1e-9 ? hh / uy : Infinity);
 }
+/* 表盘外框贴着屏幕边走：iPhone 上实测外框离屏幕边 左右 49、上下 24pt；分钟刻度长 26/25，长小时刻度长 75/78.3。
+   这些「离边多少」才是 Apple 定的量，外框本身多大由屏幕决定——电脑 16:10 时外框跟着变高，不再上下各空一大块
+   （用户 2026-10-26 电脑全屏截图）。指针长度不跟着变：手机上 1:1 不动，大屏上表盘只是外框更舒展 */
 function buildAnalog(host) {
-    const s = svgLayer(host), cx = 426, cy = 196.5;
-    const minuteTicks = [];
-    for (let i = 0; i < 60; i++) {
-        const a = i * 6 * Math.PI / 180, hour = i % 5 === 0, longHour = hour && i !== 0 && i !== 30;   // 12 点和 6 点的位置被数字占了，刻度只有短的一截
-        const ro = rayToRect(a, 377, 172.5), ri = longHour ? rayToRect(a, 302, 94.2) : rayToRect(a, 351, 147.5);
-        const ln = sv('line', { x1: cx + Math.sin(a) * ri, y1: cy - Math.cos(a) * ri, x2: cx + Math.sin(a) * ro, y2: cy - Math.cos(a) * ro,
-            'stroke-width': hour ? 3.3 : 1.8 }, s);
-        if (hour) ln.setAttribute('style', 'stroke:var(--an-hour-tick)');
-        else { const mid = (ri + ro) / 2; minuteTicks.push({ ln, v: Math.round(interp(AN_TICK_GRAD, mid)) }); }
+    const page = host.parentElement, cx = 426, cy = 196.5;
+    const s = document.createElementNS(NS, 'svg'); s.setAttribute('class', 'layer'); page.insertBefore(s, host);
+    let minuteTicks = [], date = null, lastKey = '';
+    function drawFrame() {
+        const key = view.bw + 'x' + view.bh + 'x' + view.ox;
+        if (key === lastKey) return; lastKey = key;
+        while (s.firstChild) s.firstChild.remove();
+        s.setAttribute('viewBox', `0 0 ${view.bw} ${view.bh}`); s.style.width = view.bw + 'px'; s.style.height = view.bh + 'px';
+        // 表盘中心 = 核心区中心 = 可用区域（竖屏时已让开状态栏）的中心，所以半宽就是中心到右边缘的距离
+        const X = view.ox + cx, Y = view.oy + cy;
+        const halfW = view.bw - X - 49, halfH = view.bh - Y - 24;
+        minuteTicks = [];
+        for (let i = 0; i < 60; i++) {
+            const a = i * 6 * Math.PI / 180, hour = i % 5 === 0, longHour = hour && i !== 0 && i !== 30;   // 12 点和 6 点的位置被数字占了，刻度只有短的一截
+            const ro = rayToRect(a, halfW, halfH), ri = longHour ? rayToRect(a, halfW - 75, halfH - 78.3) : rayToRect(a, halfW - 26, halfH - 25);
+            const ln = sv('line', { x1: X + Math.sin(a) * ri, y1: Y - Math.cos(a) * ri, x2: X + Math.sin(a) * ro, y2: Y - Math.cos(a) * ro,
+                'stroke-width': hour ? 3.3 : 1.8 }, s);
+            if (hour) ln.setAttribute('style', 'stroke:var(--an-hour-tick)');
+            else { const mid = (ri + ro) / 2; minuteTicks.push({ ln, v: Math.round(interp(AN_TICK_GRAD, mid)) }); }
+        }
+        // 数字离外框的距离照实测：12 中心在外框上沿下 60，6 在下沿上 59.5，9/3 离左右外框 114.3
+        const o = { weight: 600, capH: 37, capRef: '1', stretch: '150%', fill: 'var(--an-num)' };
+        placeText(makeText(s), '12', { ...o, inkW: 64.3, x: X - 0.9, xAlign: 'c', y: Y - halfH + 60, yAlign: 'c' });
+        placeText(makeText(s), '6', { ...o, inkW: 42, x: X - 0.3, xAlign: 'c', y: Y + halfH - 59.5, yAlign: 'c' });
+        placeText(makeText(s), '9', { ...o, inkW: 42, x: X - halfW + 114.3, xAlign: 'c', y: Y + 0.7, yAlign: 'c' });
+        placeText(makeText(s), '3', { ...o, inkW: 40.7, x: X + halfW - 114.3, xAlign: 'c', y: Y + 0.7, yAlign: 'c' });
+        date = makeText(s);
+        date.dataset.x = X + halfW - 114.3 - 133.7; date.dataset.y = Y + 8.5;   // 「26 周一」左缘离「3」中心 133.7（实测 555 / 688.7）
     }
-    const o = { weight: 600, capH: 37, capRef: '1', stretch: '150%', fill: 'var(--an-num)' };
-    placeText(makeText(s), '12', { ...o, inkW: 64.3, x: 425.1, xAlign: 'c', y: 84, yAlign: 'c' });
-    placeText(makeText(s), '6', { ...o, inkW: 42, x: 425.7, xAlign: 'c', y: 309.5, yAlign: 'c' });
-    placeText(makeText(s), '9', { ...o, inkW: 42, x: 163.3, xAlign: 'c', y: 197.2, yAlign: 'c' });
-    placeText(makeText(s), '3', { ...o, inkW: 40.7, x: 688.7, xAlign: 'c', y: 197.2, yAlign: 'c' });
-    const date = makeText(s);
+    drawFrame();
+    onFit.push(() => { drawFrame(); });
     faceUpdaters.push(d => {
+        drawFrame();
         const night = board.classList.contains('night');
         minuteTicks.forEach(t => t.ln.setAttribute('style', 'stroke:' + (night ? '#5b070e' : `rgb(${t.v},${t.v},${t.v})`)));
         date.textContent = '';
@@ -565,7 +584,7 @@ function buildAnalog(host) {
         const b = sv('tspan', { style: 'fill:var(--an-wk)' }, date); b.textContent = '周' + WEEK[d.getDay()];
         date.setAttribute('style', 'font-weight:500;font-size:23.7px');
         const g = ink(a.textContent + b.textContent, `500 23.7px ${SANS}`);
-        date.setAttribute('transform', `translate(${555 - g.l} 205)`);
+        date.setAttribute('transform', `translate(${+date.dataset.x - g.l} ${date.dataset.y})`);
     });
     addHands(host, cx, cy, {
         hour: { neck: 5, from: 22, tip: 93, w: 11.3 }, min: { neck: 5, from: 23, tip: 160, w: 11.3 },
@@ -780,9 +799,38 @@ function scheduleMinute() {
 
 /* ================= 夜间模式：Apple 按环境光自动切（网页拿不到环境光传感器），这里按时间 22:00–7:00 ================= */
 const nightMode = () => params.get('night') === '1' ? 'on' : params.get('night') === '0' ? 'off' : store.get('sbNight', 'auto');
+const autoNightAt = d => { const h = d.getHours(); return h >= 22 || h < 7; };
+// 双击临时切换（只在「自动」下用）：管到下一个自动切换点（7:00 或 22:00）为止，过了就回到按时间
+function nextBoundary(d) {
+    const t = new Date(d); t.setSeconds(0, 0);
+    const h = d.getHours();
+    if (h >= 22) { t.setDate(t.getDate() + 1); t.setHours(7, 0); }
+    else if (h < 7) t.setHours(7, 0);
+    else t.setHours(22, 0);
+    return t.getTime();
+}
+function nightOverride(d) {
+    try { const o = JSON.parse(store.get('sbNightOverride', 'null')); return o && d.getTime() < o.until ? o : null; } catch (e) { return null; }
+}
+function isNightNow(d) {
+    const m = nightMode();
+    if (m !== 'auto') return m === 'on';
+    const o = nightOverride(d);
+    return o ? o.on : autoNightAt(d);
+}
+function toggleNightByTap() {
+    const d = now(), on = !board.classList.contains('night'), m = nightMode();
+    if (m === 'auto') {
+        // 切到的正好就是时间本来该有的状态：等于取消临时切换
+        if (on === autoNightAt(d)) store.set('sbNightOverride', 'null');
+        else store.set('sbNightOverride', JSON.stringify({ on, until: nextBoundary(d) }));
+    } else store.set('sbNight', on ? 'on' : 'off');
+    refresh();
+    const back = m === 'auto' && on !== autoNightAt(d) ? `（到 ${on ? '7:00' : '22:00'} 自动恢复）` : '';
+    hint((on ? '夜间模式' : '白天模式') + back + ' · 双击切换', 2200);
+}
 function syncNight(d) {
-    const m = nightMode(), h = d.getHours();
-    const on = m === 'on' || (m === 'auto' && (h >= 22 || h < 7));
+    const on = isNightNow(d);
     if (on !== board.classList.contains('night')) { board.classList.toggle('night', on); lastDay = ''; }
 }
 
@@ -934,9 +982,17 @@ function endGesture(e) {
         if (e.type === 'pointercancel') g.v = 0;
         g.pager.release(g.v);
         if (g.pager === stackLPager) hideDotsSoon();
-    } else g.frozen.forEach(p => p.go(Math.round(-p.pos / p.size)));
+    } else {
+        g.frozen.forEach(p => p.go(Math.round(-p.pos / p.size)));
+        // 轻点：没动、没到长按、也不是按住了一个正在走的翻页动画（那一下是「停住」）。两下间隔 ≤350ms、位置差 ≤30px = 双击 → 切白天/夜间
+        if (e.type === 'pointerup' && !g.frozen.length && e.timeStamp - g.t < 550) {
+            if (lastTap && e.timeStamp - lastTap.t <= 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) <= 30) { lastTap = null; toggleNightByTap(); }
+            else lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+        }
+    }
     g = null;
 }
+let lastTap = null;
 board.addEventListener('pointerup', endGesture);
 board.addEventListener('pointercancel', endGesture);
 // 电脑上也能用：滚轮/触控板竖着滚 = 换样式，横着 = 翻页；方向键同理
@@ -985,7 +1041,7 @@ function openSheet() {
 }
 function closeSheet() { sheet.classList.remove('open'); }
 document.querySelectorAll('#seg-night button').forEach(b => b.addEventListener('click', () => {
-    store.set('sbNight', b.dataset.v);
+    store.set('sbNight', b.dataset.v); store.set('sbNightOverride', 'null');   // 在设置里选过，就不再带着双击的临时切换
     document.querySelectorAll('#seg-night button').forEach(x => x.classList.toggle('on', x === b));
     refresh();
 }));
@@ -1017,14 +1073,14 @@ function toggleFullscreen() {
 }
 $('btn-fs').style.display = canFS ? '' : 'none';
 $('btn-fs').addEventListener('click', () => { closeSheet(); toggleFullscreen(); });
-board.addEventListener('dblclick', () => { if (canFS && !sheetOpen()) toggleFullscreen(); });
+// 双击留给「切白天/夜间」（用户 2026-10-26 要的），全屏改用 F 键或设置里的按钮
 document.addEventListener('keydown', e => { if ((e.key === 'f' || e.key === 'F') && canFS && !sheetOpen()) toggleFullscreen(); });
 const isIOS = /iP(hone|od|ad)/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1) || /iPhone|iPod/.test(navigator.userAgent);
 function entryHint() {
     if (params.has('t')) return;
     if (view.rot && isIOS && !canFS) hint('竖屏时网页藏不掉状态栏：关掉「竖排方向锁定」把手机横过来，就是满屏', 6000);
-    else if (canFS && matchMedia('(pointer: fine)').matches) hint('双击或按 F 全屏；长按（或按回车）：设置 / 退出', 4000);
-    else hint('左右滑切换，上下滑换样式；长按：设置 / 退出', 3500);
+    else if (canFS && matchMedia('(pointer: fine)').matches) hint('按 F 全屏；双击切换白天 / 夜间；长按（或回车）：设置 / 退出', 4000);
+    else hint('左右滑切换，上下滑换样式；双击切白天 / 夜间；长按：设置', 3500);
 }
 
 /* ================= 屏幕常亮：这页本来就是放着看的 ================= */
