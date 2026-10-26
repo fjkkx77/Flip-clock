@@ -362,6 +362,18 @@
         .setting-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .setting-row .time-input { width: 56px; }
         .modal-hint { font-size: 12px; color: var(--ui-text); margin-top: 14px; line-height: 1.6; }
+        /* 开关照 iOS UISwitch：51×31，绿色 #34C759（深色模式 #30D158） */
+        .switch-list { border-radius: 12px; background: var(--btn-bg); overflow: hidden; }
+        .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 8px 14px; color: var(--ui-text-active); font-size: 15px; cursor: pointer; }
+        .switch-row + .switch-row { border-top: 1px solid var(--btn-border); }
+        .switch-row small { display: block; font-size: 12px; color: var(--ui-text); margin-top: 2px; }
+        .switch-row input { -webkit-appearance: none; appearance: none; flex: none; width: 51px; height: 31px; border-radius: 16px; background: rgba(120,120,128,0.32); position: relative; cursor: pointer; transition: background 0.2s; margin: 0; }
+        .switch-row input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,0.15), 0 1px 1px rgba(0,0,0,0.16); transition: transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1); }
+        .switch-row input:checked { background: #30d158; }
+        :root[data-theme="light"] .switch-row input:checked { background: #34c759; }
+        .switch-row input:checked::after { transform: translateX(20px); }
+        .switch-row input:focus-visible { outline: 2px solid var(--ui-text-active); outline-offset: 2px; }
+        .sb-enter { display: block; width: 100%; margin-top: 12px; }
 
         /* 签名改动确认：照 iOS 有未保存改动时的操作表（action sheet）——从底部弹出，
            上面一组是「保存 / 放弃修改」，下面单独一块「继续编辑」；点空白处等于继续编辑。
@@ -480,6 +492,9 @@
                 <button type="button" class="icon-btn" id="rotate-btn" aria-label="强制横屏" title="强制横屏模式">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13,4.07V1L8.45,5.55L13,10V6.09C15.84,6.57 18,9.03 18,12C18,14.97 15.84,17.43 13,17.91V19.93C16.95,19.43 20,16.04 20,12C20,7.96 16.95,4.57 13,4.07M7.1,18.32C8.26,19.22 9.61,19.76 11,19.93V17.9C10.13,17.75 9.29,17.41 8.54,16.87L7.1,18.32M6.09,13H4.07C4.24,14.39 4.79,15.73 5.69,16.89L7.1,15.47C6.58,14.72 6.23,13.88 6.09,13M7.11,8.53L5.7,7.11C4.8,8.27 4.24,9.61 4.07,11H6.09C6.23,10.13 6.58,9.28 7.11,8.53Z"/></svg>
                 </button>
+                <button type="button" class="icon-btn" id="standby-btn" aria-label="待机显示" title="待机显示（S）">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4,6H20A2,2 0 0,1 22,8V16A2,2 0 0,1 20,18H4A2,2 0 0,1 2,16V8A2,2 0 0,1 4,6M4,8V16H20V8H4M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M11.5,10V12.2L13.2,13.2L13.6,12.6L12.3,11.8V10H11.5Z"/></svg>
+                </button>
             </div>
         </div>
 
@@ -500,7 +515,14 @@
                     <span class="time-label">专注</span><input type="number" id="set-focus" class="time-input" inputmode="numeric" min="1" max="99" aria-label="专注分钟数"><span class="time-label">分钟</span>
                     <span class="time-label" style="margin-left: 12px;">休息</span><input type="number" id="set-break" class="time-input" inputmode="numeric" min="1" max="60" aria-label="休息分钟数"><span class="time-label">分钟</span>
                 </div>
-                <p class="modal-hint">计时进行中会保持屏幕常亮（浏览器支持时）。空格键：开始/暂停　F：沉浸模式　Esc：关闭</p>
+                <div class="modal-label">屏幕</div>
+                <div class="switch-list">
+                    <label class="switch-row"><span>保持屏幕常亮<small id="wake-note">页面开着就不自动锁屏</small></span><input type="checkbox" role="switch" id="set-awake"></label>
+                    <label class="switch-row"><span>横屏自动沉浸<small>5 秒不操作，自动隐藏按钮</small></span><input type="checkbox" role="switch" id="set-autoimm"></label>
+                    <label class="switch-row"><span>横屏闲置自动进入待机显示<small>1 分钟不操作，切到仿 iPhone 待机显示</small></span><input type="checkbox" role="switch" id="set-autosb"></label>
+                </div>
+                <button type="button" class="btn-apple sb-enter" id="standby-enter">进入待机显示</button>
+                <p class="modal-hint">空格键：开始/暂停　F：沉浸模式　S：待机显示　Esc：关闭</p>
             </div>
         </div>
 
@@ -718,25 +740,37 @@
             setTimeout(() => c.classList.remove('ring'), 4200);
         }
 
-        // 屏幕常亮：沉浸模式、番茄钟/倒计时进行中时申请（计时结束提醒要靠页面醒着才能按时响）。
-        // 页面切到后台时系统会自动释放，回到前台要重新申请
+        // 屏幕偏好：常亮默认开（看时间的工具，放着不动就是它的正常用法）；横屏自动沉浸默认开；横屏闲置进待机显示默认关
+        const screenPref = {
+            awake: store.get('keepAwake', '1') === '1',
+            autoImm: store.get('autoImmersive', '1') === '1',
+            autoSb: store.get('autoStandby', '0') === '1'
+        };
+
+        // 屏幕常亮：打开"保持屏幕常亮"时页面开着就一直申请；关掉时只在沉浸模式、番茄钟/倒计时进行中申请
+        // （计时结束提醒要靠页面醒着才能按时响）。
+        // 以前只有后面这几种情况才申请——停在时钟页、没点沉浸键，iPhone 照常自动锁屏（用户报过）。
+        // 页面切到后台时系统会自动释放，回到前台要重新申请；申请失败（个别浏览器要求在点击里申请）就在下一次点击时再试
         let wakeLock = null, wakePending = false;
+        const wantWake = () => (screenPref.awake || isImmersiveMode || pomo.running || cd.running) && document.visibilityState === 'visible';
         async function syncWakeLock() {
             if (!('wakeLock' in navigator)) return;
-            const want = (isImmersiveMode || pomo.running || cd.running) && document.visibilityState === 'visible';
+            const want = wantWake();
             if (want && !wakeLock && !wakePending) {
                 wakePending = true;
                 try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    wakeLock.addEventListener('release', () => { wakeLock = null; });
+                    const w = await navigator.wakeLock.request('screen');
+                    wakeLock = w;
+                    w.addEventListener('release', () => { if (wakeLock === w) wakeLock = null; });
                 } catch (e) { wakeLock = null; }
                 wakePending = false;
-                if (!((isImmersiveMode || pomo.running || cd.running))) syncWakeLock();   // 申请期间状态又变了
+                if (!wantWake() && wakeLock) syncWakeLock();   // 申请期间状态又变了
             } else if (!want && wakeLock) {
                 const w = wakeLock; wakeLock = null;
                 w.release().catch(() => {});
             }
         }
+        ['click', 'touchend', 'keydown'].forEach(evt => document.addEventListener(evt, () => { if (!wakeLock && wantWake()) syncWakeLock(); }, true));
 
         /* ================= 6. 番茄钟 / 计时器 =================
            一律按"真实时间"算：记下结束时刻（或开始时刻），每次刷新用 Date.now() 推剩余。
@@ -1003,6 +1037,9 @@
         function openSettings() {
             $('set-focus').value = settings.focusMin; $('set-break').value = settings.breakMin;
             document.querySelectorAll('.theme-card').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.theme === (document.documentElement.dataset.theme || 'dark'))));
+            $('set-awake').checked = screenPref.awake; $('set-autoimm').checked = screenPref.autoImm; $('set-autosb').checked = screenPref.autoSb;
+            // 不支持常亮的浏览器（如部分 App 内置浏览器、iOS 18.4 以前从主屏幕打开）直接说清楚，别让人以为开了
+            if (!('wakeLock' in navigator)) $('wake-note').textContent = '这个浏览器不支持，请用 Safari 打开（iOS 18.4 及以上）';
             modal.classList.add('active');
         }
         const closeSettings = () => modal.classList.remove('active');
@@ -1016,6 +1053,18 @@
             document.querySelectorAll('.theme-card').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.theme === name)));
         }
         document.querySelectorAll('.theme-card').forEach(c => c.addEventListener('click', () => { applyTheme(c.dataset.theme); closeSettings(); }));
+
+        [['set-awake', 'awake', 'keepAwake'], ['set-autoimm', 'autoImm', 'autoImmersive'], ['set-autosb', 'autoSb', 'autoStandby']].forEach(([id, k, key]) => {
+            $(id).addEventListener('change', e => {
+                screenPref[k] = e.target.checked; store.set(key, e.target.checked ? '1' : '0');
+                syncWakeLock(); resetIdleTimer();
+            });
+        });
+
+        // 待机显示（仿 iPhone StandBy）是单独一页 standby.html；当前标签本来就存在 localStorage 里，回来还是原样
+        function enterStandby() { location.href = 'standby.html'; }
+        $('standby-btn').addEventListener('click', enterStandby);
+        $('standby-enter').addEventListener('click', enterStandby);
 
         function applyDurations() {
             // 改时长前先看这一轮是不是"还没开始"（剩余 = 整段）：是才换成新时长，暂停在半路的不动
@@ -1072,12 +1121,23 @@
         document.addEventListener('focusout', () => setTimeout(() => { syncFrame(); autoHideRotateBtn(); }, 50));
         syncFrame();
 
+        // 沉浸 = 不操作 5 秒后把按钮栏淡出去，碰一下屏幕再出来。
+        // 两种情况会自动沉浸：点了沉浸键；或者开着"横屏自动沉浸"且现在是横屏（真横屏、强制横屏都算）。
+        // 以前只有点沉浸键才会隐藏，横过来放着不动按钮一直挂着（用户报过）。
+        // 设置/操作表开着、正在输入时不隐藏，免得人正在操作，按钮先没了
+        const isLandscapeNow = () => document.body.classList.contains('force-landscape') || window.innerWidth > window.innerHeight;
+        const immersiveWanted = () => isImmersiveMode || (screenPref.autoImm && isLandscapeNow());
+        const busyNow = () => modal.classList.contains('active') || quoteSheetOpen() || isEditing();
+        let idleSince = Date.now();
         function resetIdleTimer() {
             clearTimeout(idleTimer);
+            idleSince = Date.now();
             topBars.forEach(bar => bar.classList.remove('idle-hidden'));
             document.body.classList.remove('idle-cursor');
-            if (isImmersiveMode) {
-                idleTimer = setTimeout(() => {
+            if (immersiveWanted()) {
+                idleTimer = setTimeout(function hide() {
+                    if (busyNow()) { idleTimer = setTimeout(hide, 1000); return; }
+                    if (!immersiveWanted()) return;
                     topBars.forEach(bar => bar.classList.add('idle-hidden'));
                     document.body.classList.add('idle-cursor');
                 }, 5000);
@@ -1146,6 +1206,10 @@
         }
         window.addEventListener('resize', autoHideRotateBtn);
         autoHideRotateBtn(); // 初始化检测
+        // 横竖屏一变，要不要自动沉浸也跟着变；刚打开也要开始计时（不然从没碰过屏幕就永远不隐藏）
+        let lastLand = isLandscapeNow();
+        window.addEventListener('resize', () => { if (isLandscapeNow() !== lastLand) { lastLand = isLandscapeNow(); resetIdleTimer(); } });
+        resetIdleTimer();
 
         // 页面从挂起中恢复（锁屏回来、切回标签页、从后台缓存恢复）时立刻追上真实时间，不等下一次定时器。
         // 只靠 visibilitychange 不够：页面被冻结再解冻时它不一定触发（实测 CDP 冻结恢复后只有 resume），要几个一起听
@@ -1177,8 +1241,17 @@
                 else if (isShown('timer')) { e.preventDefault(); toggleTimer(); }
             } else if (e.key === 'f' || e.key === 'F') {
                 $('fullscreen-btn').click();
+            } else if (e.key === 's' || e.key === 'S') {
+                enterStandby();
             }
         });
+
+        // 横屏闲置自动进待机显示：iPhone 是"充电 + 横放 + 不动"自动进，网页拿不到充电状态（Safari 没有 Battery API），
+        // 只能用"横屏 + 1 分钟没碰"代替，所以默认关、由用户自己打开。番茄钟/倒计时在跑时不进（那边不响提醒）
+        setInterval(() => {
+            if (screenPref.autoSb && document.visibilityState === 'visible' && isLandscapeNow() && !busyNow()
+                && !pomo.running && !cd.running && Date.now() - idleSince >= 60000) enterStandby();
+        }, 5000);
 
         /* ================= 9. 主体居中 + 按实测空间等比缩放 ================= */
         const appWrapper = $('app-wrapper');

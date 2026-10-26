@@ -94,9 +94,15 @@ function layoutChecks(tag, g) {
   check('翻页连翻不打架', race.topAnimAt300 && race.top === '8' && race.bottom === '8' && race.anims === 0, race);
   await c.ev("flipSingleDigit('t-s2', '0', false)");
 
+  // 竖屏不自动沉浸：放着 5 秒以上按钮栏还在（只有横屏/点了沉浸键才隐藏）
+  await sleep(5600);
+  check('竖屏放着不动：按钮栏不隐藏', await c.ev("![...document.querySelectorAll('.top-bar')].some(b => b.classList.contains('idle-hidden'))"));
+
   // 番茄钟按真实时间走：冻结页面 5 秒（相当于 iPhone 锁屏/切后台）
   await c.ev("document.querySelector('[data-tab=pomodoro]').click()"); await sleep(300);
-  // 假的 Wake Lock：验证"计时中申请、暂停后释放"的逻辑（headless 里真的申请不到）
+  // 假的 Wake Lock：验证"计时中申请、暂停后释放"的逻辑（headless 里真的申请不到）。
+  // 这一段测的是"常亮开关关掉时"的行为，所以先把开关关了（默认是开）
+  await c.ev("localStorage.setItem('keepAwake', '0'); screenPref.awake = false; syncWakeLock()"); await sleep(100);
   await c.ev(`window.__wl = { req: 0, rel: 0 }; Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => { __wl.req++;
     const t = new EventTarget(); t.release = async () => { __wl.rel++; t.dispatchEvent(new Event('release')); }; return t; } } });`);
   await c.ev("document.getElementById('pomodoro-btn').click()"); await sleep(300);
@@ -206,6 +212,41 @@ function layoutChecks(tag, g) {
     kept.theme === 'light' && kept.quote === '' && kept.land && kept.tab === 'view-timer' && kept.sw, kept);
   layoutChecks('强制横屏/计时器', await c.ev(GEO));
   check('页面无 JS 报错', c.errors.length === 0, c.errors);
+  c.close();
+
+  /* ---------- 真横屏手机 844×390：默认常亮、横屏自动沉浸、闲置进待机显示 ---------- */
+  c = await open(844, 390, 3);
+  const FAKE_WL = `window.__wl = { req: 0, rel: 0 }; Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => { __wl.req++;
+    const t = new EventTarget(); t.release = async () => { __wl.rel++; t.dispatchEvent(new Event('release')); }; return t; } } });`;
+  await c.send('Page.addScriptToEvaluateOnNewDocument', { source: FAKE_WL });
+  await c.goto(U); await fresh(c);
+  check('默认：一打开就申请常亮（停在时钟页、没点沉浸键也要常亮）', await c.ev('__wl.req >= 1 && !!wakeLock'), await c.ev('__wl'));
+  await c.ev('wakeLock.release()'); await sleep(100);   // 系统收回（切后台/锁屏）
+  await c.ev("document.dispatchEvent(new Event('visibilitychange'))"); await sleep(100);
+  check('常亮被系统收回后，回到前台重新申请', await c.ev('__wl.req >= 2 && !!wakeLock'), await c.ev('__wl'));
+  const HIDDEN = "[...document.querySelectorAll('.top-bar')].every(b => b.classList.contains('idle-hidden'))";
+  check('横屏刚打开时按钮栏可见', !(await c.ev(HIDDEN)));
+  await sleep(5600);
+  check('横屏放着 5 秒不动：自动沉浸（按钮栏隐藏）', await c.ev(HIDDEN));
+  await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 420, y: 200 }] });
+  await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(200);
+  check('碰一下屏幕按钮栏回来', !(await c.ev(HIDDEN)));
+  await c.ev("document.getElementById('settings-btn').click()"); await sleep(5600);
+  check('设置开着时不自动隐藏', !(await c.ev(HIDDEN)));
+  const sw0 = await c.ev("[...document.querySelectorAll('.switch-row input')].map(i => i.checked)");
+  check('设置里三个开关默认：常亮开、自动沉浸开、自动待机关', JSON.stringify(sw0) === '[true,true,false]', sw0);
+  const swBox = await c.ev("[...document.querySelectorAll('.switch-row')].map(r => Math.round(r.getBoundingClientRect().height))");
+  check('开关行高 ≥ 44', swBox.every(h => h >= 44), swBox);
+  await c.ev("document.getElementById('set-autoimm').click()"); await sleep(100);
+  await c.ev("document.getElementById('settings-btn').click()"); await sleep(300);
+  await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await sleep(5800);
+  check('关掉"横屏自动沉浸"后横屏也不隐藏、开关记住了', !(await c.ev(HIDDEN)) && (await c.ev("localStorage.getItem('autoImmersive')")) === '0');
+  await c.ev("document.getElementById('set-awake').click()"); await sleep(200);
+  check('关掉"保持屏幕常亮"→ 释放常亮', await c.ev('!wakeLock && __wl.rel >= 2'), await c.ev('__wl'));
+  await c.ev("document.getElementById('set-awake').click(); document.getElementById('set-autosb').click()"); await sleep(200);
+  check('打开自动待机后记住', (await c.ev("localStorage.getItem('autoStandby')")) === '1');
+  await c.ev("idleSince = Date.now() - 61000"); await sleep(5600);
+  check('横屏闲置 1 分钟 → 自动进入待机显示', /standby\.html$/.test(await c.ev('location.pathname')), await c.ev('location.pathname'));
   c.close();
 
   /* ---------- 真横屏手机 844×390：倒计时输入框在场时卡片别缩太小 ---------- */
