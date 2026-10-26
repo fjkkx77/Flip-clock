@@ -256,6 +256,13 @@ function layoutChecks(tag, g) {
   await c.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, topMax: 0, bottom: 21, bottomMax: 21, left: 59, leftMax: 59, right: 59, rightMax: 59 } });
   await c.goto(U); await c.ev("localStorage.clear(); localStorage.setItem('autoImmersive', '0')"); await c.goto(U); await sleep(900);
   const physCard = await c.ev(CARD), physIcons = await c.ev("[...document.querySelectorAll('#top-left .icon-btn')].filter(b => b.offsetParent).length");
+  // 横屏按钮浮在上层不占位（用户 2026-10-26 看效果图选的）：卡片从 137×185 放大，且按钮出现/隐藏时卡片不跳（HIG：切换别突兀）
+  check('横屏卡片比以前大（以前 137×185，现在 ≥170×229）', physCard[0] >= 170 && physCard[1] >= 229, physCard);
+  await c.ev("document.querySelectorAll('.top-bar').forEach(b => b.classList.add('idle-hidden'))"); await sleep(900);
+  check('按钮隐藏/出现时卡片大小不变', JSON.stringify(await c.ev(CARD)) === JSON.stringify(physCard), [physCard, await c.ev(CARD)]);
+  await c.ev("document.querySelectorAll('.top-bar').forEach(b => b.classList.remove('idle-hidden'))"); await sleep(400);
+  const ovl = await c.ev("(() => { const t = document.querySelector('.top-bar').getBoundingClientRect(), d = document.getElementById('date-display').getBoundingClientRect(), g = document.querySelector('#view-clock .clock-group').getBoundingClientRect(); return { barBottom: t.bottom, dateTop: d.top, cardTop: g.top, barLeft: t.left }; })()");
+  check('浮起来的按钮栏不压卡片和日期、不压灵动岛那侧', ovl.barBottom <= ovl.dateTop + 1 && ovl.barBottom <= ovl.cardTop && ovl.barLeft >= 58, ovl);
   layoutChecks('真横屏(安全区)/时钟', await c.ev(GEO));
   const navC = await c.ev("(() => { const b = document.querySelector('.nav-menu').getBoundingClientRect(); return (b.left + b.right) / 2; })()");
   check('横屏：图标并到顶行左边、导航仍在正中(±2)', physIcons >= 3 && Math.abs(navC - 426) <= 2, { physIcons, navC });

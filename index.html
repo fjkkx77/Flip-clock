@@ -202,6 +202,13 @@
         .spacer { width: var(--icon-size); height: var(--icon-size); pointer-events: none; }
         .icon-group { display: flex; gap: 10px; }
         .top-left { display: flex; gap: 10px; align-items: center; }
+        /* 横屏：顶栏浮在上层不占位（位置由 placeIcons 按安全区写 left/right/top）；卡片放大时间距不跟着放大；
+           日期、签名退后一点（只调淡，不藏：HIG「全屏」要求只调比例、不增减元素）。签名编辑时恢复正常亮度 */
+        body.land-overlay .top-bar:not(.bottom-bar-wrap) { position: absolute; z-index: 100; }
+        body.land-overlay .clock-container { gap: calc(var(--card-gap) * min(var(--fit, 1), 1)); }
+        body.land-overlay #view-clock .date-display { opacity: 0.75; }
+        body.land-overlay #view-clock .quote:not(:focus) { opacity: 0.5; }
+        body.land-overlay #view-clock .quote { margin-top: clamp(5px, 2vmin, 28px) !important; }
 
         .nav-menu { display: flex; gap: clamp(8px, 2vw, 40px); }
         /* 热区至少 44×44（Apple HIG 的最小可点尺寸）；以前只有 30×26 */
@@ -1220,6 +1227,11 @@
             else if (!land && iconGroup.parentElement !== bottomWrap) bottomWrap.appendChild(iconGroup);
             bottomWrap.style.display = land ? 'none' : '';
             topSpacer.style.width = land ? topLeft.offsetWidth + 'px' : '';   // 右边垫一样宽，中间的导航才在正中
+            // 横屏：顶栏浮在上层（position:absolute 不占位置），位置按包装器的安全区留出来（灵动岛那侧不能压）
+            document.body.classList.toggle('land-overlay', land);
+            // 这里不能用后面第 9 节的 appWrapper / topBarEl 常量：第一次调用在脚本初始化中途，那时它们还没声明
+            const cs = getComputedStyle($('app-wrapper'));
+            Object.assign(document.querySelector('.top-bar:not(.bottom-bar-wrap)').style, land ? { left: cs.paddingLeft, right: cs.paddingRight, top: cs.paddingTop } : { left: '', right: '', top: '' });
             requestAnimationFrame(() => queueFit());   // 第一次是在脚本初始化中途调的，那时 queueFit 用到的变量还没声明，放到下一帧
         }
         window.addEventListener('resize', autoHideRotateBtn);
@@ -1278,23 +1290,43 @@
         const topBarEl = document.querySelector('.top-bar:not(.bottom-bar-wrap)');
         const bottomBarEl = document.querySelector('.bottom-bar-wrap');
 
+        // 竖屏底部安全区（有没有主屏指示条）：强制横屏时包装器的 padding 已经换了方向，单独用探针量
+        function portraitBottomInset() {
+            const d = document.createElement('div');
+            d.style.cssText = 'position:fixed;left:0;top:0;width:0;visibility:hidden;height:env(safe-area-inset-bottom)';
+            document.body.appendChild(d); const v = d.getBoundingClientRect().height; d.remove(); return v;
+        }
         function fitLayout() {
             const cs = getComputedStyle(appWrapper);
-            // 上下各留同样的高度 = 两条栏里较高的那一条（含安全区），这样上下对称，卡片正好居中
-            const reserve = Math.max(parseFloat(cs.paddingTop) + topBarEl.offsetHeight,
-                                     parseFloat(cs.paddingBottom) + bottomBarEl.offsetHeight);
+            const pt = parseFloat(cs.paddingTop), pb = parseFloat(cs.paddingBottom), pl = parseFloat(cs.paddingLeft), pr = parseFloat(cs.paddingRight);
+            // 横屏（land-overlay）：按钮栏浮在上层、不占位置（HIG「全屏」：临时隐藏工具栏让内容优先；「布局」：控件浮在内容之上），
+            // 上下只让开安全区再多 8px。竖屏照旧：上下各留「栏 + 安全区」里较高的那份，卡片正好居中。
+            const overlay = document.body.classList.contains('land-overlay');
+            // 两种横屏要一样大：都按「真横屏」底部那条主屏指示条的安全区来让（签名就在它正上方，不能压）。
+            // 真横屏时这个值就是 pb，量到就记下来；强制横屏时那条在侧边，拿不到，就用记下的真机值；
+            // 从没真横过来的设备用 21 兜底（Face ID 机型横屏的常见值，我凭印象写的、没核对官方文档，真机横一次就被实测值覆盖），竖屏底部没有指示条的机型就是 0
+            let landBottom = pb;
+            if (overlay) {
+                if (!document.body.classList.contains('force-landscape')) { if (pb > 0) store.set('landBottomInset', String(pb)); }
+                else landBottom = +store.get('landBottomInset', '') || (portraitBottomInset() > 0 ? 21 : 0);
+            }
+            const reserve = overlay ? Math.max(pt, landBottom) + 8
+                : Math.max(pt + topBarEl.offsetHeight, pb + bottomBarEl.offsetHeight);
             appWrapper.style.setProperty('--reserve', reserve + 'px');
 
             const view = document.querySelector('.view-container.active');
             if (!view) return;
-            const W = appWrapper.clientWidth, H = appWrapper.clientHeight; // 布局尺寸，不受 rotate 影响
+            const W = appWrapper.clientWidth - (overlay ? pl + pr : 0), H = appWrapper.clientHeight; // 布局尺寸，不受 rotate 影响；横屏扣掉灵动岛那侧的安全区
             const cardW = cardProbe.offsetWidth, cardH = cardProbe.offsetHeight, gap = gapProbe.offsetWidth;
             const n = view.querySelectorAll('.clock-group').length;
             // 上下附属内容取较高的一侧，两边都按它留，才能保证卡片居中时两边都不会压到东西
             const side = Math.max(view.querySelector('.v-above').offsetHeight, view.querySelector('.v-below').offsetHeight);
             const fitH = (H - 2 * (reserve + side)) / cardH;
-            const fitW = (W - 2 * 16) / (n * cardW + (n - 1) * gap);
-            const fit = Math.max(0.3, Math.min(1, fitH, fitW));
+            // 横屏放大时卡片间距不跟着放大（CSS 里 gap × min(fit,1)），左右各留屏宽 6%（至少 16px），大屏上不贴边
+            const margin = overlay ? Math.max(16, W * 0.06) : 16;
+            const fitW = overlay ? (W - 2 * margin - (n - 1) * gap) / (n * cardW) : (W - 2 * margin) / (n * cardW + (n - 1) * gap);
+            // 上限：竖屏 1（CSS 里写的就是最大期望尺寸）；横屏放开到 2.4，让卡片撑满让出来的空间
+            const fit = Math.max(0.3, Math.min(overlay ? 2.4 : 1, fitH, fitW));
             view.style.setProperty('--fit', fit.toFixed(4));
             if (debugEl) renderDebug({ W, H, reserve, side, fit });
         }
