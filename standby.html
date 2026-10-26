@@ -887,36 +887,66 @@ function springPts(distance, velocity) {
 }
 function rubber(off, dim) { const x = Math.abs(off), b = (1 - 1 / ((x * 0.55 / dim) + 1)) * dim; return off < 0 ? -b : b; }
 // 页宽/页高跟着屏幕走（sizeFn 每次现取），转屏、改窗口大小后 onFit 里按新尺寸把每个翻页器摆回当前页
+/* 循环（loop）：竖着的叠放和时钟样式滑到最后一个再往下 = 回到第一个（用户 2026-10-26 在原生 iPhone 上试过，原生就会循环）。
+   做法不克隆页面（克隆的不会跟着走时间）：滑过尾巴时把第一页临时挪到最后一页后面，滑过开头时把最后一页挪到第一页前面，
+   动画停稳后再把位置换算回真实的那一页、页面摆回原位——看上去就是一直往下翻 */
 class Pager {
-    constructor(track, axis, sizeFn, count, idx, onSettle) {
-        Object.assign(this, { track, axis, sizeFn, count, idx, onSettle, anim: null });
+    constructor(track, axis, sizeFn, count, idx, onSettle, loop) {
+        Object.assign(this, { track, axis, sizeFn, count, idx, onSettle, anim: null, loop: !!loop && count > 1 });
+        this.pages = [...track.children];
         this.pos = -idx * this.size; this.apply(this.pos);
         onFit.push(() => { if (this.anim) { this.anim.cancel(); this.anim = null; } this.pos = -this.idx * this.size; this.apply(this.pos); });
     }
     get size() { return this.sizeFn(); }
-    apply(p) { this.track.style.transform = this.axis === 'x' ? `translate3d(${p}px,0,0)` : `translate3d(0,${p}px,0)`; }
+    // 循环时按位置决定首/尾页临时摆在哪：位置越过最后一页 → 第一页接在后面；越过第一页 → 最后一页接在前面
+    wrap(p, p2 = p) {   // p..p2 = 这段时间里会经过的位置（动画时是起点到终点），路上露出来的那一侧都要接上
+        if (!this.loop) return;
+        const k = this.axis === 'x' ? 'left' : 'top', unit = this.axis === 'x' ? '--bw' : '--bh', n = this.count;
+        const at = (el, i) => { el.style[k] = `calc(var(${unit}) * ${i})`; };
+        this.pages.forEach((el, i) => at(el, i));
+        if (Math.min(p, p2) < -(n - 1) * this.size) at(this.pages[0], n);
+        else if (Math.max(p, p2) > 0) at(this.pages[n - 1], -1);
+    }
+    apply(p) { this.wrap(p); this.track.style.transform = this.axis === 'x' ? `translate3d(${p}px,0,0)` : `translate3d(0,${p}px,0)`; }
     live() { if (!this.anim) return this.pos; const m = new DOMMatrixReadOnly(getComputedStyle(this.track).transform); return this.axis === 'x' ? m.m41 : m.m42; }
     freeze() { const p = this.live(); if (this.anim) { this.anim.cancel(); this.anim = null; } this.pos = p; this.apply(p); return p; }
-    grab() { this.base = this.freeze(); this.from = Math.max(0, Math.min(this.count - 1, Math.round(-this.base / this.size))); this.track.style.willChange = 'transform'; }
+    // 当前位置对应的真实页号（循环时取模）
+    index(p) { const i = Math.round(-p / this.size); return this.loop ? ((i % this.count) + this.count) % this.count : Math.max(0, Math.min(this.count - 1, i)); }
+    grab() {
+        let p = this.freeze();
+        if (this.loop) {   // 半路按住时如果已经越过首尾超过半页，先把位置换算回真实范围，免得接着拖时越界两页
+            const span = this.count * this.size;
+            while (p < -(this.count - 0.5) * this.size) p += span;
+            while (p > 0.5 * this.size) p -= span;
+            this.pos = p; this.apply(p);
+        }
+        this.base = p; this.from = Math.round(-p / this.size); this.track.style.willChange = 'transform';
+    }
     drag(dlt) {
         let p = this.base + dlt; const min = -(this.count - 1) * this.size;
-        if (p > 0) p = rubber(p, this.size); else if (p < min) p = min + rubber(p - min, this.size);
+        if (!this.loop) { if (p > 0) p = rubber(p, this.size); else if (p < min) p = min + rubber(p - min, this.size); }
+        else p = Math.max(min - this.size, Math.min(this.size, p));   // 循环：最多拖到接上来的那一页
         this.pos = p; this.apply(p);
     }
     release(v) {
         const proj = this.pos + v * PROJECT;
         let t = Math.round(-proj / this.size);
         t = Math.max(this.from - 1, Math.min(this.from + 1, t));   // 一次最多一页
-        this.go(Math.max(0, Math.min(this.count - 1, t)), v);
+        this.go(this.loop ? Math.max(-1, Math.min(this.count, t)) : Math.max(0, Math.min(this.count - 1, t)), v);
     }
+    step(d) { this.go(this.loop ? this.idx + d : Math.max(0, Math.min(this.count - 1, this.idx + d))); }   // 滚轮/方向键：循环时直接越过首尾
     go(t, v = 0) {
-        const from = this.pos, to = -t * this.size, changed = t !== this.idx;
-        this.idx = t; this.pos = to;
-        const done = () => { this.anim = null; this.track.style.willChange = ''; if (this.onSettle) this.onSettle(t, changed); };
+        const from = this.pos, to = -t * this.size, real = this.loop ? ((t % this.count) + this.count) % this.count : t, changed = real !== this.idx;
+        this.idx = real; this.pos = to;
+        const done = () => {
+            this.anim = null; this.track.style.willChange = '';
+            this.pos = -real * this.size; this.apply(this.pos);   // 停在接上来的那页 → 换回真实位置、页面摆回原位，看不出跳动
+            if (this.onSettle) this.onSettle(real, changed);
+        };
         if (reduceMQ.matches || Math.abs(from - to) < 0.5 || !this.track.animate) { this.apply(to); done(); return; }
         const sp = springPts(from - to, v);
         const prop = this.axis === 'x' ? p => `translate3d(${p}px,0,0)` : p => `translate3d(0,${p}px,0)`;
-        this.apply(to);
+        this.apply(to); this.wrap(from, to);
         const a = this.track.animate(sp.pts.map((q, i) => ({ offset: i / (sp.pts.length - 1), transform: prop(from + (to - from) * q) })), { duration: sp.ms, easing: 'linear', fill: 'both' });
         this.anim = a;
         a.onfinish = () => { if (this.anim === a) { a.cancel(); done(); } };
@@ -925,14 +955,14 @@ class Pager {
 const clampIdx = (v, n) => Math.max(0, Math.min(n - 1, +v || 0));
 const PW = () => view.bw, PH = () => view.bh;
 const hPager = new Pager($('h-track'), 'x', PW, 2, clampIdx(params.get('page') ?? store.get('sbPage', 1), 2), t => store.set('sbPage', t));
-const facePager = new Pager(facesTrack, 'y', PH, FACE_ORDER.length, clampIdx(params.get('face') ?? store.get('sbFace', 1), FACE_ORDER.length), t => store.set('sbFace', t));
+const facePager = new Pager(facesTrack, 'y', PH, FACE_ORDER.length, clampIdx(params.get('face') ?? store.get('sbFace', 1), FACE_ORDER.length), t => store.set('sbFace', t), true);
 let dotsTimer = 0;
 function showDots(i) {
     [...dotsL.children].forEach((b, n) => b.classList.toggle('on', n === i));
     dotsL.classList.add('show'); clearTimeout(dotsTimer);
 }
 function hideDotsSoon() { clearTimeout(dotsTimer); dotsTimer = setTimeout(() => dotsL.classList.remove('show'), 1200); }
-const stackLPager = new Pager(stackL, 'y', PH, STACK_L.length, clampIdx(params.get('stack') ?? store.get('sbStack', 0), STACK_L.length), t => { store.set('sbStack', t); showDots(t); hideDotsSoon(); });
+const stackLPager = new Pager(stackL, 'y', PH, STACK_L.length, clampIdx(params.get('stack') ?? store.get('sbStack', 0), STACK_L.length), t => { store.set('sbStack', t); showDots(t); hideDotsSoon(); }, true);
 const stackRPager = new Pager(stackR, 'y', PH, 1, 0);
 const pagers = [hPager, facePager, stackLPager, stackRPager];
 
@@ -978,7 +1008,7 @@ board.addEventListener('pointermove', e => {
     const dt = e.timeStamp - g.lastT;
     if (dt > 0) { g.v = g.v * 0.4 + ((d - g.last) / dt) * 0.6; g.last = d; g.lastT = e.timeStamp; }
     g.pager.drag(d);   // 同步写 transform，不排到下一帧
-    if (g.pager === stackLPager) showDots(Math.max(0, Math.min(STACK_L.length - 1, Math.round(-stackLPager.pos / view.bh))));
+    if (g.pager === stackLPager) showDots(stackLPager.index(stackLPager.pos));
 });
 function endGesture(e) {
     if (!g || e.pointerId !== g.id) return;
@@ -1013,7 +1043,7 @@ board.addEventListener('wheel', e => {
     if (Math.abs(dx) > Math.abs(dy)) hPager.go(clampIdx(hPager.idx + Math.sign(dx), 2));
     else {
         const p = hPager.idx === 1 ? facePager : stackLPager;
-        p.go(clampIdx(p.idx + Math.sign(dy), p.count));
+        p.step(Math.sign(dy));
         if (p === stackLPager) { showDots(p.idx); hideDotsSoon(); }
     }
 }, { passive: false });
@@ -1021,7 +1051,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { if (sheetOpen()) closeSheet(); else exitStandby(); return; }
     if (sheetOpen()) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') hPager.go(clampIdx(hPager.idx + (e.key === 'ArrowRight' ? 1 : -1), 2));
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { const p = hPager.idx === 1 ? facePager : stackLPager; p.go(clampIdx(p.idx + (e.key === 'ArrowDown' ? 1 : -1), p.count)); }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { const p = hPager.idx === 1 ? facePager : stackLPager; p.step(e.key === 'ArrowDown' ? 1 : -1); }
     if (e.key === 'Enter' || e.key === ' ') openSheet();
 });
 

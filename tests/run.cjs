@@ -380,6 +380,24 @@ function layoutChecks(tag, g) {
   check('设置里写的时段跟着改了', (await c.ev("document.getElementById('night-range').textContent")) === '22:30–6:00');
   await c.goto(SB + '?t=2026-10-26T02:30:00'); await sleep(400);
   check('重开后记住上次停在哪一页、哪个样式', (await c.ev('[__sb.pagers.hPager.idx, __sb.pagers.facePager.idx]')).join() === '1,3');
+  // 循环（用户在原生 iPhone 上试过：滑到最后一个再往下就回到第一个）
+  await drag(426, 300, 426, 100); await drag(426, 300, 426, 100);
+  const fl = await c.ev("({ idx: __sb.pagers.facePager.idx, pos: __sb.pagers.facePager.pos, tops: [...document.querySelectorAll('#faces > .page')].map(p => p.style.top) })");
+  check('时钟样式：最后一个（漂浮）再往上滑 → 回到第一个（数字），停稳后位置和页面都摆回原样', fl.idx === 0 && fl.pos === 0 && fl.tops.every((t, i) => t.includes('* ' + i + ')')), fl);
+  await drag(426, 100, 426, 300);
+  check('时钟样式：第一个往下滑 → 到最后一个', (await c.ev('__sb.pagers.facePager.idx')) === 4);
+  await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 }); await sleep(900);
+  check('方向键也循环（最后一个按↓ → 第一个）', (await c.ev('__sb.pagers.facePager.idx')) === 0);
+  await drag(300, 200, 700, 200);   // 回小组件页
+  await c.ev('__sb.pagers.stackLPager.go(2)'); await sleep(900);
+  await drag(200, 300, 200, 80);
+  const sl = await c.ev("({ idx: __sb.pagers.stackLPager.idx, on: [...document.querySelectorAll('#dots-l b')].findIndex(b => b.classList.contains('on')) })");
+  check('左边叠放：最后一个再往上滑 → 回到第一个，圆点也指到第一个', sl.idx === 0 && sl.on === 0, sl);
+  await drag(200, 80, 200, 300);
+  check('左边叠放：第一个往下滑 → 到最后一个', (await c.ev('__sb.pagers.stackLPager.idx')) === 2);
+  await drag(640, 300, 640, 80);
+  check('右边月历只有一项：不循环、弹回不动', (await c.ev('__sb.pagers.stackRPager.idx')) === 0);
+  check('循环滑动没有 JS 报错', c.errors.length === 0, c.errors);
   const lunarSb = await c.ev("Array.from({ length: 800 }, (_, i) => __sb.lunarText(new Date(2025, 0, 1 + i * 3)))");
   check('待机显示页没有 JS 报错', c.errors.length === 0, c.errors);
   await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await sleep(700);
