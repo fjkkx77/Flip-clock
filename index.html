@@ -219,11 +219,11 @@
         /* ======= 视图容器 ======= */
         /* 主体绝对居中：视图铺满整个包装器（不受上下栏高度差和安全区左右不等的影响），
            三行网格 = 上方附属(日期/子标签) | 卡片 | 下方附属(签名/按钮)，
-           上下两行强制等高(minmax(0,1fr))，卡片就永远落在正中；上下留出同样的 --reserve 给导航栏/按钮栏。 */
+           上下两行强制等高(minmax(0,1fr))，卡片就永远落在正中。卡片多大由 fitLayout 定：
+           上下两摞（栏 + 附属内容）取高的那摞，两行都至少这么高，附属内容贴着卡片、栏在它外侧，谁也压不到谁。 */
         .view-container {
             display: none; position: absolute; inset: 0;
             grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); justify-items: center;
-            padding: var(--reserve, 0px) 0;
             animation: fadeIn 0.4s ease-out;
         }
         .view-container.active { display: grid; }
@@ -1303,8 +1303,7 @@
         function fitLayout() {
             const cs = getComputedStyle(appWrapper);
             const pt = parseFloat(cs.paddingTop), pb = parseFloat(cs.paddingBottom), pl = parseFloat(cs.paddingLeft), pr = parseFloat(cs.paddingRight);
-            // 横屏（land-overlay）：按钮栏浮在上层、不占位置（HIG「全屏」：临时隐藏工具栏让内容优先；「布局」：控件浮在内容之上），
-            // 上下只让开安全区再多 8px。竖屏照旧：上下各留「栏 + 安全区」里较高的那份，卡片正好居中。
+            // 横屏（land-overlay）：底栏的图标并进顶栏，卡片可以放大到撑满（HIG「全屏」：让内容优先）。
             const overlay = document.body.classList.contains('land-overlay');
             // 两种横屏要一样大：都按「真横屏」底部那条主屏指示条的安全区来让（签名就在它正上方，不能压）。
             // 真横屏时这个值就是 pb，量到就记下来；强制横屏时那条在侧边，拿不到，就用记下的真机值；
@@ -1314,25 +1313,27 @@
                 if (!document.body.classList.contains('force-landscape')) { if (pb > 0) store.set('landBottomInset', String(pb)); }
                 else landBottom = +store.get('landBottomInset', '') || (portraitBottomInset() > 0 ? 21 : 0);
             }
-            const reserve = overlay ? Math.max(pt, landBottom) + 8
-                : Math.max(pt + topBarEl.offsetHeight, pb + bottomBarEl.offsetHeight);
-            appWrapper.style.setProperty('--reserve', reserve + 'px');
-
             const view = document.querySelector('.view-container.active');
             if (!view) return;
             const W = appWrapper.clientWidth - (overlay ? pl + pr : 0), H = appWrapper.clientHeight; // 布局尺寸，不受 rotate 影响；横屏扣掉灵动岛那侧的安全区
+            // 约束（只量不猜）：卡片上方那一摞 = 顶栏底边 + 上方附属（日期/子标签/输入框），下方那一摞 = 底栏（或安全区）+ 下方附属（签名/按钮）。
+            // 卡片要在正中，所以两边都按高的那一摞留。offsetTop 是包装器里的布局坐标，强制横屏转了 90° 也不受影响。
+            // 以前横屏浮层只给顶上留「安全区 + 8px」，没算顶栏自己的高度，番茄钟/计时器的子标签和输入框被顶栏盖住（2026-10-28 用户截图）
+            const bottomShown = bottomBarEl.offsetParent !== null;
+            const topStack = topBarEl.offsetTop + topBarEl.offsetHeight + view.querySelector('.v-above').offsetHeight;
+            const bottomStack = (bottomShown ? H - bottomBarEl.offsetTop : (overlay ? landBottom + 8 : pb)) + view.querySelector('.v-below').offsetHeight;
+            const edge = Math.max(topStack, bottomStack);
+            appWrapper.style.setProperty('--reserve', (topBarEl.offsetTop + topBarEl.offsetHeight) + 'px');   // 提示条从顶栏下面出来
             const cardW = cardProbe.offsetWidth, cardH = cardProbe.offsetHeight, gap = gapProbe.offsetWidth;
             const n = view.querySelectorAll('.clock-group').length;
-            // 上下附属内容取较高的一侧，两边都按它留，才能保证卡片居中时两边都不会压到东西
-            const side = Math.max(view.querySelector('.v-above').offsetHeight, view.querySelector('.v-below').offsetHeight);
-            const fitH = (H - 2 * (reserve + side)) / cardH;
+            const fitH = (H - 2 * edge) / cardH;
             // 横屏放大时卡片间距不跟着放大（CSS 里 gap × min(fit,1)），左右各留屏宽 6%（至少 16px），大屏上不贴边
             const margin = overlay ? Math.max(16, W * 0.06) : 16;
             const fitW = overlay ? (W - 2 * margin - (n - 1) * gap) / (n * cardW) : (W - 2 * margin) / (n * cardW + (n - 1) * gap);
             // 上限：竖屏 1（CSS 里写的就是最大期望尺寸）；横屏放开到 2.4，让卡片撑满让出来的空间
             const fit = Math.max(0.3, Math.min(overlay ? 2.4 : 1, fitH, fitW));
             view.style.setProperty('--fit', fit.toFixed(4));
-            if (debugEl) renderDebug({ W, H, reserve, side, fit });
+            if (debugEl) renderDebug({ W, H, reserve: edge, side: topStack + '/' + bottomStack, fit });
         }
 
         // 诊断面板：地址加 ?debug，或连点数字卡片 5 下（主屏幕模式没有地址栏）。真机一张截图就能看到所有实测值
