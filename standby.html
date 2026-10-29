@@ -1225,13 +1225,13 @@ entryHint();
 function floatMetricsText() {
     const f = `900 100px ${ROUNDED}`, one = ink('1', f), q = v => +v.toFixed(2);
     const rows = [...'0123456789'].map(ch => { const g = ink(ch, f); return `${ch}:${q(g.l)},${q(g.r)},${q(g.adv)}`; });
-    return `圆体 1高 ${q(one.t)},${q(one.b)}\n${rows.slice(0, 5).join(' ')}\n${rows.slice(5).join(' ')}`;
+    return `圆体 1高 ${q(one.t)},${q(one.b)}\n${[0, 3, 6, 9].map(i => rows.slice(i, i + 3).join(' ')).join('\n')}`;   // 一行 3 个：竖着拿时屏宽只有 393，一行 5 个右边会被切掉（10-29 用户截图缺了 4 和 9）
 }
 if (params.has('debug')) {
     const fam = SANS, n0 = (w, cap) => { const k = ink('1', `${w} 100px ${fam}`), sz = cap / ((k.b - k.t) / 100), g = ink('0', `${w} ${sz}px ${fam}`); return g.r - g.l; };
     const dg = pickStretch(700, fam, DIGITAL_W[0] / n0(700, 282)), so = pickStretch(500, fam, SOLAR_W[0] / n0(500, 148));
     const tries = ['37.5%', '50%', '62.5%', '75%', '87.5%', '112.5%', '125%', '150%'].map(c => c + '→' + stretchRatio(700, fam, c).toFixed(2)).join(' ');
-    const box = el('div', '', document.body, 'position:fixed;left:8px;top:8px;z-index:99;background:rgba(0,0,0,.8);color:#0f0;font:11px/1.4 monospace;padding:6px;white-space:pre;pointer-events:none');
+    const box = el('div', '', document.body, 'position:fixed;left:8px;top:8px;z-index:99;background:rgba(0,0,0,.8);color:#0f0;font:11px/1.4 monospace;padding:6px;white-space:pre-wrap;word-break:break-all;max-width:calc(100vw - 16px);pointer-events:none');
     box.textContent = `数字 选 ${dg.stretch}（比 ${dg.ratio.toFixed(2)}）  日光 选 ${so.stretch}（比 ${so.ratio.toFixed(2)}）\n各档实测字宽比：${tries}\n漂浮校准 ${JSON.stringify(calibrateFloat())}\n${floatMetricsText()}\n替代字体 ${JSON.stringify({ sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded })}\nview ${JSON.stringify(view)}\nUA ${navigator.userAgent}`;
 }
 window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet, pickStretch, calibrateFloat, fontSubs: { sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded } };
