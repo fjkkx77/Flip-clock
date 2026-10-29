@@ -1047,14 +1047,17 @@ function endGesture(e) {
         g.frozen.forEach(p => p.go(Math.round(-p.pos / p.size)));
         // 轻点：没动、没到长按、也不是按住了一个正在走的翻页动画（那一下是「停住」）。两下间隔 ≤350ms、位置差 ≤30px = 双击 → 切白天/夜间
         if (e.type === 'pointerup' && !g.frozen.length && e.timeStamp - g.t < 550) {
-            showBack();   // 轻点一下：返回按钮淡入（双击时第一下就出来了，不影响切白天/夜间）
-            if (lastTap && e.timeStamp - lastTap.t <= 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) <= 30) { lastTap = null; toggleNightByTap(); }
-            else lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+            // 单击 = 出返回按钮，双击 = 切白天/夜间，双击时不出按钮（用户 2026-10-29 要的）。
+            // 照 UIKit 的 require(toFail:)：单击要等「双击没发生」才算——所以单击后等一个双击窗口（DOUBLE_TAP_MS）再出按钮，代价是按钮晚出来这么一下
+            clearTimeout(singleTapTimer);
+            if (lastTap && e.timeStamp - lastTap.t <= DOUBLE_TAP_MS && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) <= 30) { lastTap = null; toggleNightByTap(); }
+            else { lastTap = { t: e.timeStamp, x: e.clientX, y: e.clientY }; singleTapTimer = setTimeout(showBack, DOUBLE_TAP_MS); }
         }
     }
     g = null;
 }
-let lastTap = null;
+let lastTap = null, singleTapTimer = 0;
+const DOUBLE_TAP_MS = 350;   // 两下间隔在这之内（且位置差 ≤30px）算双击
 board.addEventListener('pointerup', endGesture);
 board.addEventListener('pointercancel', endGesture);
 // 电脑上也能用：滚轮/触控板竖着滚 = 换样式，横着 = 翻页；方向键同理

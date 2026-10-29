@@ -402,7 +402,14 @@ function layoutChecks(tag, g) {
   const backState = () => c.ev("(() => { const b = document.getElementById('btn-back'), r = b.getBoundingClientRect(); return { show: b.classList.contains('show'), vis: getComputedStyle(b).visibility, l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; })()");
   await sleep(3300);   // 上面双击测试时点出来的返回按钮先等它藏回去
   check('返回按钮：没碰屏幕时藏着、点不到', (await backState()).vis === 'hidden', await backState());
-  await tap(500, 200); await sleep(400);
+  const night0 = await c.ev(NIGHT);   // 这时页面钉在 02:30，本来就是夜间
+  await tap(500, 200); await sleep(120); await tap(500, 200); await sleep(700);
+  check('双击 → 白天/夜间切换了，但不出返回按钮（双击专门用来切白天/夜间）', (await c.ev(NIGHT)) !== night0 && !(await backState()).show,
+    { back: await backState(), night0, night: await c.ev(NIGHT), ov: await c.ev("localStorage.getItem('sbNightOverride')") });
+  await tap(500, 200); await sleep(120); await tap(500, 200); await sleep(700);   // 再双击切回白天
+  await tap(500, 200); await sleep(150);
+  check('单击后先等双击窗口（0.35 秒）过去，按钮不会立刻出来', !(await backState()).show);
+  await sleep(250);
   const bk = await backState();
   check('轻点屏幕 → 返回按钮出现在左上角、≥44×44、在屏幕内', bk.show && bk.vis === 'visible' && bk.w >= 44 && bk.h >= 44 && bk.l >= 0 && bk.t >= 0 && bk.l < 100 && bk.t < 100, bk);
   await sleep(3300);
