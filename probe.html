@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>待机显示检测页</title>
+<!-- 2026-10-29 排查用的独立页面，不影响主页面：
+     ① 在这台设备上跑一遍「逐像素量墨迹」（standby.html 48719db 那一版的做法），看每次读像素多慢——用户 iPhone 上那一版卡死了，
+        电脑版 WebKit 只卡 1.2 秒，要真机数字才知道是不是它；
+     ② 用这台设备的圆体（iPhone 上就是 SF 圆体）把 0–9 都大大地显示出来，给没有 SF 的设备挑替代字体当标准 -->
+<style>
+    :root { --rounded: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif; }
+    body { margin: 0; background: #000; color: #0f0; font: 13px/1.5 ui-monospace, Menlo, monospace; padding: 12px 12px 40px; }
+    #log { white-space: pre-wrap; word-break: break-all; }
+    .digits { color: #fff; font-family: var(--rounded); font-weight: 900; font-size: 22vw; line-height: 1.05; letter-spacing: 0.02em; text-align: center; margin-top: 10px; }
+    .note { color: #888; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="log">测量中……（最多十几秒，期间页面不动是正常的）</div>
+<div class="digits">01234<br>56789</div>
+<div class="note">截图时请把上面的数字和这几行都截进去。</div>
+<script>
+'use strict';
+const log = document.getElementById('log');
+// 等页面先画出来再测，不然卡住时连「测量中」都看不到
+setTimeout(() => {
+    const ROUNDED = getComputedStyle(document.documentElement).getPropertyValue('--rounded').trim();
+    const SANS = 'system-ui, -apple-system, sans-serif';
+    const mctx = document.createElement('canvas').getContext('2d');
+    const pctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const times = []; let canvasMs = 0;
+    function inkPx(text, font) {   // 跟 standby.html 48719db 一样的量法
+        const size = parseFloat(font.match(/([\d.]+)px/)[1]), sc = 400 / size;
+        mctx.font = font;
+        const adv = mctx.measureText(text).width, pad = size * 0.3, base = size * 1.25;
+        const cw = Math.ceil((adv + pad * 2) * sc), ch = Math.ceil(size * 1.6 * sc), cv = pctx.canvas;
+        const c0 = performance.now();
+        cv.width = cw; cv.height = ch;
+        pctx.setTransform(sc, 0, 0, sc, 0, 0); pctx.font = font; pctx.fillText(text, pad, base);
+        const t0 = performance.now();
+        const a = pctx.getImageData(0, 0, cw, ch).data;
+        const t1 = performance.now();
+        canvasMs += t0 - c0; times.push(t1 - t0);
+        return a.length;
+    }
+    // 跟主页面启动时差不多的 59 次：各种字号的数字、日期
+    const jobs = [];
+    for (const ch of '0123456789') jobs.push([ch, `900 100px ${ROUNDED}`]);
+    for (const ch of '0123456789') jobs.push([ch, `700 282px ${SANS}`]);
+    for (const ch of '0123456789') jobs.push([ch, `500 148px ${SANS}`]);
+    for (const ch of '0123456789') jobs.push([ch, `600 37px ${SANS}`]);
+    for (const t of ['26 周一', '14:54', '九月十七', '10月', '周一', '26', '北京', '一', '二', '三', '四', '五', '六', '日', '12', '3', '6', '9', '1']) jobs.push([t, `600 21px ${SANS}`]);
+    const T0 = performance.now();
+    jobs.forEach(([t, f]) => inkPx(t, f));
+    const total = performance.now() - T0;
+    const sorted = [...times].sort((a, b) => a - b), q = v => v.toFixed(1);
+    mctx.font = `900 100px ${ROUNDED}`;
+    const m = mctx.measureText('1');
+    log.textContent = `逐像素量 ${jobs.length} 次：共 ${q(total)} ms\n` +
+        `其中读像素 共 ${q(times.reduce((a, b) => a + b, 0))} ms，每次 中位 ${q(sorted[sorted.length >> 1])} / 最慢 ${q(sorted[sorted.length - 1])} ms\n` +
+        `画字 共 ${q(canvasMs)} ms\n` +
+        `measureText('1')：左 ${q(m.actualBoundingBoxLeft)} 右 ${q(m.actualBoundingBoxRight)} 宽 ${q(m.width)}\n` +
+        `屏幕 ${screen.width}×${screen.height}@${devicePixelRatio}\nUA ${navigator.userAgent}`;
+}, 300);
+</script>
+</body>
+</html>
