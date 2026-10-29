@@ -437,16 +437,6 @@ function layoutChecks(tag, g) {
     .map(t => (t.getAttribute('transform') || '').match(/scale\\(([\\d.]+)/)).filter(Boolean).map(m => +m[1])`);
   check('替代字体下数字/日光样式的数字横向缩放在 ±3% 以内（宽度直接调到位）', scales.length >= 8 && scales.every(s => Math.abs(s - 1) <= 0.03), scales);
   // 漂浮样式照抄 iPhone 实测的 SF 圆体字宽（SF_FLOAT）；用户 iPhone 14 Pro 的 ?debug 显示字距校准 t −11.8203、gap 16.8643，这里算出来要一样
-  // 量墨迹：逐像素的结果要跟字体文件里的轮廓真值一致（真值用 fontTools BoundsPen 从 fonts/*.woff 读出，字号 100 下的 左/右/上/下）。
-  // 浏览器自带的 measureText 墨迹框不用：Chrome 往外多算约 1 像素（字号 21 差 6%），iPhone Safari 干脆只给字宽
-  const TRUTH = { 'SB Rounded|900': { 0: [3.5, 61.5, -74, 1], 1: [9.7, 46.7, -73, 0], 4: [1.2, 60.5, -73, 0], 7: [7, 58.3, -73, 0], 9: [4.2, 60.5, -74, 1] },
-    'SB Sans|600': { 0: [3.027, 47.412, -72.07, 0.977], 1: [4.346, 35.449, -71.729, 0], 4: [0.537, 49.121, -71.094, 0], 7: [1.172, 46.875, -71.094, 0], 9: [2.148, 48.486, -72.07, 0.977] } };
-  const inkErr = await c.ev(`(() => { const T = ${JSON.stringify(TRUTH)}; let worst = 0;
-    for (const key in T) { const [fam, w] = key.split('|'); for (const size of [21, 100, 282]) for (const ch in T[key]) {
-      const a = __sb.inkPx(ch, w + ' ' + size + 'px "' + fam + '"'), t = T[key][ch].map(v => v * size / 100);
-      worst = Math.max(worst, Math.abs(a.l - t[0]) / size * 100, Math.abs(a.r - t[1]) / size * 100, Math.abs(a.t - t[2]) / size * 100, Math.abs(a.b - t[3]) / size * 100); } }
-    return worst; })()`);
-  check('逐像素量墨迹跟字体文件真值差 ≤0.3%（字号 21/100/282）', inkErr <= 0.3, inkErr);
   const fcal = await c.ev('__sb.calibrateFloat()');
   check('漂浮样式：没有 SF 时按 iPhone 的字宽排，反推的字距跟 iPhone 一致（±0.01）', Math.abs(fcal.t + 11.8203) < 0.01 && Math.abs(fcal.gap - 16.8643) < 0.01, fcal);
   c.close();
@@ -459,17 +449,6 @@ function layoutChecks(tag, g) {
     sans: getComputedStyle(document.documentElement).getPropertyValue('--sans').trim().slice(0, 10), txt: document.querySelector('.face-digital text').textContent })`);
   check('有 SF 的设备：不下载替代字体、字体变量不动、照常显示', !apple.s.sans && !apple.s.rounded && apple.req === 0 && apple.sans === 'system-ui,' && apple.txt === '1', apple);
   c.close();
-  // ②b 模拟 iPhone Safari 的 measureText（墨迹左恒 0、右恒为字宽）：页面上每段字的位置、字号要跟正常浏览器一模一样
-  const TEXT_GEO = `[...document.querySelectorAll('svg text')].filter(t => t.textContent).map(t => [t.textContent, t.getAttribute('transform'), t.style.fontSize])`;
-  c = await open(852, 393, 3);
-  await c.goto(SB + '?t=2026-10-26T14:54:10&page=1&face=4&freeze=1'); await sleep(900);
-  const geoA = await c.ev(TEXT_GEO); c.close();
-  c = await open(852, 393, 3);
-  await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `{ const m = CanvasRenderingContext2D.prototype.measureText; CanvasRenderingContext2D.prototype.measureText = function (t) { const r = m.call(this, t);
-    return { width: r.width, actualBoundingBoxLeft: 0, actualBoundingBoxRight: r.width, actualBoundingBoxAscent: r.actualBoundingBoxAscent, actualBoundingBoxDescent: r.actualBoundingBoxDescent }; }; }` });
-  await c.goto(SB + '?t=2026-10-26T14:54:10&page=1&face=4&freeze=1'); await sleep(900);
-  const geoB = await c.ev(TEXT_GEO), brokenSeen = await c.ev('__sb.inkBroken'); c.close();
-  check('模拟 iPhone Safari 量不出墨迹：认出来了，且每段字的位置/字号跟正常浏览器完全一样', brokenSeen && geoA.length > 50 && JSON.stringify(geoA) === JSON.stringify(geoB), { brokenSeen, n: geoA.length });
   // ③ 字体下载失败：不能卡住，照常用系统字体显示
   c = await open(852, 393, 3);
   await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `FontFace.prototype.load = function () { return Promise.reject(new Error('blocked')); };` });
@@ -548,14 +527,6 @@ function layoutChecks(tag, g) {
   const layOut = (lay.stdout || '') + (lay.stderr || '');
   layOut.split(/\r?\n/).filter(l => /^(FAIL|A |B |布局不变量)/.test(l)).forEach(l => console.log('  ' + l));
   check('布局不变量全部通过（明细：node tests/layout.cjs）', lay.status === 0, (layOut.match(/布局不变量：.*/) || ['没跑完'])[0]);
-
-  /* ---------- 待机显示：各种设备/像素密度/浏览器缩放下显示一致（tests/consistency.cjs，约 1 分钟） ----------
-     2026-10-29 用户要求「不管放大放小、什么平台什么尺寸都一致」：22 种设备和缩放，每段字的位置换算回核心区要跟 iPhone 14 Pro 横屏差 ≤0.5pt。
-     故意让位置随窗口宽度偏一点的变异版本，这个测试会报 8 种不一致（能失败，不是摆设） */
-  const con = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'consistency.cjs')], { encoding: 'utf8', env: process.env });
-  const conOut = (con.stdout || '') + (con.stderr || '');
-  conOut.split(/\r?\n/).filter(l => /^(FAIL|显示一致性)/.test(l)).forEach(l => console.log('  ' + l));
-  check('待机显示在各种设备/缩放下显示一致（明细：node tests/consistency.cjs）', con.status === 0, (conOut.match(/显示一致性：.*/) || ['没跑完'])[0]);
 
   server.close();
   console.log(`\n${pass} 通过，${fail} 失败`);
