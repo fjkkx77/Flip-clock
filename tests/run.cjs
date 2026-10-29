@@ -398,6 +398,17 @@ function layoutChecks(tag, g) {
   await drag(640, 300, 640, 80);
   check('右边月历只有一项：不循环、弹回不动', (await c.ev('__sb.pagers.stackRPager.idx')) === 0);
   check('循环滑动没有 JS 报错', c.errors.length === 0, c.errors);
+  // 返回按钮（用户 2026-10-29 要的）：轻点淡入、3 秒淡出、在屏幕安全区内、≥44；停着的翻页器不常驻 3D 图层
+  const backState = () => c.ev("(() => { const b = document.getElementById('btn-back'), r = b.getBoundingClientRect(); return { show: b.classList.contains('show'), vis: getComputedStyle(b).visibility, l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; })()");
+  await sleep(3300);   // 上面双击测试时点出来的返回按钮先等它藏回去
+  check('返回按钮：没碰屏幕时藏着、点不到', (await backState()).vis === 'hidden', await backState());
+  await tap(500, 200); await sleep(400);
+  const bk = await backState();
+  check('轻点屏幕 → 返回按钮出现在左上角、≥44×44、在屏幕内', bk.show && bk.vis === 'visible' && bk.w >= 44 && bk.h >= 44 && bk.l >= 0 && bk.t >= 0 && bk.l < 100 && bk.t < 100, bk);
+  await sleep(3300);
+  check('3 秒没再碰 → 返回按钮自己藏起来', (await backState()).vis === 'hidden', await backState());
+  check('翻页器停着时不常驻 3D 图层（「右边月历偶尔不见」的修法）', await c.ev("[...document.querySelectorAll('.track')].every(t => !/3d/.test(t.style.transform))"),
+    await c.ev("[...document.querySelectorAll('.track')].map(t => t.id + ':' + t.style.transform)"));
   const lunarSb = await c.ev("Array.from({ length: 800 }, (_, i) => __sb.lunarText(new Date(2025, 0, 1 + i * 3)))");
   check('待机显示页没有 JS 报错', c.errors.length === 0, c.errors);
   await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await sleep(700);
@@ -418,6 +429,11 @@ function layoutChecks(tag, g) {
   check('电脑 16:10：画板铺满窗口、日光背景铺满（以前上下各一条黑边）、页面不能滚',
     dk.b.join() === '0,0,1707,1067' && dk.bg.join() === '0,0,1707,1067' && dk.scroll === 0, dk);
   check('电脑上有「全屏」入口（F 键 / 设置里的按钮）', await c.ev("getComputedStyle(document.getElementById('btn-fs')).display !== 'none'"));
+  await c.send('Emulation.setTouchEmulationEnabled', { enabled: false });   // 电脑：主输入是鼠标
+  await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 800, y: 500 });
+  await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 830, y: 520 }); await sleep(400);
+  const bkd = await backState();
+  check('电脑：动一下鼠标 → 返回按钮出现；画板放大两倍，按钮按屏幕尺寸仍是 44 高、不跟着变大', bkd.vis === 'visible' && bkd.h >= 44 && bkd.h <= 48, bkd);
   const anFrame = await c.ev(`(() => { const pg = document.querySelector('.face-analog').getBoundingClientRect(), ls = [...document.querySelectorAll('.face-analog > svg line')].map(l => l.getBoundingClientRect());
     return { top: Math.round(Math.min(...ls.map(r => r.top)) - pg.top), bottom: Math.round(Math.max(...ls.map(r => r.bottom)) - pg.top), left: Math.round(Math.min(...ls.map(r => r.left)) - pg.left), right: Math.round(Math.max(...ls.map(r => r.right)) - pg.left), s: __sb.view.s }; })()`);
   check('电脑 16:10：指针表盘外框贴着屏幕边（离边 24/49pt × 缩放，不再上下空一大块）',
@@ -440,6 +456,13 @@ function layoutChecks(tag, g) {
   check('竖屏：手指往上划 = 画面里向左滑 → 翻到时钟页', (await c.ev('__sb.pagers.hPager.idx')) === 1);
   check('竖着进来的，不会因为「是竖屏」就自动退出', /standby\.html$/.test(await c.ev('location.pathname')));
   await c.vshot(path.join(__dirname, 'shots', 'sb390-rotated.png'));
+  await tap(195, 500); await sleep(400);
+  const bkr = await backState();
+  check('竖着拿：轻点出现返回，在画面左上角（= 屏幕右上）、让开 59pt 状态栏、≥44×44',
+    bkr.vis === 'visible' && bkr.t >= 59 && bkr.r <= 390 && bkr.r > 300 && bkr.w >= 44 && bkr.h >= 44, bkr);
+  await c.vshot(path.join(__dirname, 'shots', 'sb390-back.png'));
+  await tap((bkr.l + bkr.r) / 2, (bkr.t + bkr.b) / 2); await sleep(900);
+  check('点「返回」→ 回到翻页时钟主页', /\/$/.test(await c.ev('location.pathname')), await c.ev('location.pathname'));
   check('页面无 JS 报错', c.errors.length === 0, c.errors);
   c.close();
 
