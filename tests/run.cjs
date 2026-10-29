@@ -52,6 +52,9 @@ function layoutChecks(tag, g) {
   /* ---------- 竖屏手机 390×844 ---------- */
   let c = await open(390, 844, 3);
   await c.goto(U); await fresh(c);
+  // 第一次点「息屏显示」要等好几秒（用户 2026-10-30 报，慢在跟 GitHub Pages 建连接 + 下载）：主页闲下来要在后台把 standby.html 先取进缓存
+  await sleep(1500);
+  check('主页打开后在后台预取待机页（点「息屏显示」直接从缓存打开）', await c.ev(`performance.getEntriesByType('resource').some(e => /standby\\.html$/.test(e.name))`));
 
   // 刚打开那一帧：数字要直接是当前时间（以前 6 位从 00 一起翻，上半张新、下半张 0，卡半秒），视图也不该还在淡入
   await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__first = null; (function f() {

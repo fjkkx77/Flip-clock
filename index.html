@@ -1070,6 +1070,13 @@
         function enterStandby() { location.href = 'standby.html'; }
         $('standby-btn').addEventListener('click', enterStandby);
         $('standby-enter').addEventListener('click', enterStandby);
+        // 第一次点「息屏显示」要等好几秒、再点就秒进（用户 2026-10-30 报）：慢在跟 GitHub Pages 建连接 + 下载
+        // （实测握手 1.2–1.7 秒、整页 1.8–4 秒），不是页面本身卡。主页闲下来就在后台把 standby.html 取进缓存，点按钮时直接从缓存打开。
+        // 服务器给的缓存期是 10 分钟（max-age=600），所以每 9 分钟、以及从后台回来时再取一次；内容没变只是个 304 确认，几乎不耗流量
+        function warmStandby() { if (document.visibilityState === 'visible') fetch('standby.html').catch(() => {}); }
+        (window.requestIdleCallback || (f => setTimeout(f, 1500)))(warmStandby);
+        setInterval(warmStandby, 9 * 60 * 1000);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') warmStandby(); });
 
         function applyDurations() {
             // 改时长前先看这一轮是不是"还没开始"（剩余 = 整段）：是才换成新时长，暂停在半路的不动
