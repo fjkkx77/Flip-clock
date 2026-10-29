@@ -1,9 +1,12 @@
 """待机显示 standby.html 的替代字体：没有 SF 字体的设备（Windows、安卓）用它们代替，iPhone / Mac 不下载、不使用。
 
-用法：python tools/build-standby-fonts.py <RobotoFlex 可变字体.ttf> <MPLUSRounded1c-ExtraBold.ttf>
+用法：python tools/build-standby-fonts.py <RobotoFlex 可变字体.ttf> <Baloo2 可变字体.ttf>
 源文件（都是 SIL OFL 1.1，许可证见 fonts/OFL-standby.txt）：
   https://github.com/google/fonts/tree/main/ofl/robotoflex   RobotoFlex[GRAD,XOPQ,...,wdth,wght].ttf
-  https://github.com/google/fonts/tree/main/ofl/mplusrounded1c   MPLUSRounded1c-ExtraBold.ttf
+  https://github.com/google/fonts/tree/main/ofl/baloo2   Baloo2[wght].ttf
+圆体（漂浮样式用）2026-10-30 从 M PLUS Rounded 1c 换成 Baloo 2：用户指出 M PLUS 的「3」是平顶、跟 SF 圆顶不像。
+  拿用户 iPhone 上 probe.html 截的 SF 圆体 0–9，12 款开源圆体按「1」竖笔粗细对齐后逐字算重合度（交并比）：
+  Baloo 2 平均 0.865（最差「3」0.77），M PLUS ExtraBold 0.812（「3」0.62），其余 ≤0.84。字重 742 时竖笔粗细跟 SF 900 一样（0.254）。
 只留 0–9 和冒号（U+30–3A），页面里用 unicode-range 限定，别的字照旧走系统字体。
 
 为什么 Roboto Flex 拆成好几个文件（2026-10-29 实测）：
@@ -51,4 +54,6 @@ for key, (wght, lo, hi) in FACES.items():
         'YTUC': None, 'YTLC': None, 'YTAS': None, 'YTDE': None, 'YTFI': None})
     buf = io.BytesIO(); f.save(buf); buf.seek(0)   # 实例化后先存一遍再读回来，直接拿去子集化会报 KeyError: '.notdef'
     save_subset(TTFont(buf), f'fonts/sb-sans-{key}.woff')
-save_subset(TTFont(rounded_src), 'fonts/sb-rounded.woff')
+r = instancer.instantiateVariableFont(TTFont(rounded_src), {'wght': 742})
+buf = io.BytesIO(); r.save(buf); buf.seek(0)
+save_subset(TTFont(buf), 'fonts/sb-rounded.woff')

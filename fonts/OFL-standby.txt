@@ -1,8 +1,8 @@
 fonts/sb-sans.woff  — Roboto Flex 子集（0–9 与冒号）
 Copyright 2017 The Roboto Flex Project Authors (https://github.com/TypeNetwork/Roboto-Flex)
 
-fonts/sb-rounded.woff — M PLUS Rounded 1c ExtraBold 子集（0–9 与冒号）
-Copyright 2016 The Rounded M+ Project Authors.
+fonts/sb-rounded.woff — Baloo 2 子集（字重 742，0–9 与冒号）
+Copyright 2019 The Baloo 2 Project Authors (https://github.com/EkType/Baloo2)
 
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
