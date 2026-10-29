@@ -460,6 +460,14 @@ function layoutChecks(tag, g) {
   check('页面无 JS 报错', c.errors.length === 0, c.errors);
   c.close();
 
+  /* ---------- 布局不变量：设备矩阵 + 连续扫尺寸（tests/layout.cjs，单独也能跑，约 5 分钟） ----------
+     看得见的元素两两不重叠、都在安全区内、热区 ≥44、卡片居中、真横屏和强制横屏一样大。
+     2026-10-28 加：以前只查「卡片不压栏」，横屏浮层把子标签/输入框盖住了也没查出来 */
+  const lay = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'layout.cjs')], { encoding: 'utf8', env: process.env });
+  const layOut = (lay.stdout || '') + (lay.stderr || '');
+  layOut.split(/\r?\n/).filter(l => /^(FAIL|A |B |布局不变量)/.test(l)).forEach(l => console.log('  ' + l));
+  check('布局不变量全部通过（明细：node tests/layout.cjs）', lay.status === 0, (layOut.match(/布局不变量：.*/) || ['没跑完'])[0]);
+
   server.close();
   console.log(`\n${pass} 通过，${fail} 失败`);
   process.exit(fail ? 1 : 0);
