@@ -314,11 +314,52 @@ fit();
 const SANS = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim();
 const ROUNDED = getComputedStyle(document.documentElement).getPropertyValue('--rounded').trim();
 const mctx = document.createElement('canvas').getContext('2d');
-function ink(text, font) {
+function inkMT(text, font) {   // 浏览器自带的墨迹框
     mctx.font = font;
     const m = mctx.measureText(text);
     return { l: -m.actualBoundingBoxLeft, r: m.actualBoundingBoxRight, t: -m.actualBoundingBoxAscent, b: m.actualBoundingBoxDescent, adv: m.width };
 }
+/* 墨迹一律「画到画布上逐像素找边界」量（2026-10-29），不用浏览器自带的 measureText 墨迹框：
+   · iPhone 的 Safari 根本量不出左右：actualBoundingBoxLeft 恒为 0、Right 恒为字宽（用户 14 Pro / iOS 27 上 ?debug 实测），
+     页面拿字宽当墨迹对齐，漂浮样式比苹果原生截图小了 10%–16%，按墨迹对齐的其他地方也跟着偏；
+   · Chrome 自带的也往外多算约 1 像素：跟字体文件里的轮廓真值比，字号 100 差 1.2%、字号 21 差 6%；逐像素是 0.05% / 0.9%（测试守着）。
+   各平台用同一把尺子，排出来才一致。INK_BROKEN 只给诊断面板标「这台浏览器自带的量法是不是只给字宽」 */
+const INK_BROKEN = ['900 100px ' + ROUNDED, '700 100px ' + SANS].some(f => {
+    const m = (mctx.font = f, mctx.measureText('1'));
+    return !(m.actualBoundingBoxRight > 0) || (Math.abs(m.actualBoundingBoxLeft) < 0.01 && Math.abs(m.actualBoundingBoxRight - m.width) < 0.01);
+});
+const pctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true }), inkCache = new Map();
+function inkPx(text, font, room = 1) {
+    const key = text + '|' + font;
+    if (room === 1 && inkCache.has(key)) return inkCache.get(key);
+    const size = parseFloat(font.match(/([\d.]+)px/)[1]), sc = 400 / size;   // 一律放大到字号 400 再量：精度 1/400 字号（测试里跟字体文件真值差 ≤0.15%）。试过 200：像素少 3/4 但耗时不变（时间花在每次读回上，57 次约 0.1 秒）
+    mctx.font = font;
+    // 留白：字头最高 ≈1.1 字号、字脚 ≈0.3，左右出头不到 0.3；墨迹碰到画布边就说明被截了，留白加倍重量（room）
+    const adv = mctx.measureText(text).width, pad = size * 0.3 * room, base = size * (1.25 + 0.5 * (room - 1));
+    const cw = Math.ceil((adv + pad * 2) * sc), ch = Math.ceil(size * (1.6 + room - 1) * sc), cv = pctx.canvas;
+    cv.width = cw; cv.height = ch;   // 改尺寸会清空画布、重置变换
+    pctx.setTransform(sc, 0, 0, sc, 0, 0); pctx.font = font; pctx.textBaseline = 'alphabetic'; pctx.fillStyle = '#000';
+    pctx.fillText(text, pad, base);
+    // 从四边往里找第一个「覆盖过半」的像素（边缘落在半透明处）；只读 alpha，碰到就停，比整张扫一遍快得多（10-29 整张扫让启动慢了 0.45 秒）
+    const a = new Uint32Array(pctx.getImageData(0, 0, cw, ch).data.buffer), on = i => (a[i] >>> 24) >= 128;   // 小端：最高字节是 alpha
+    const rowHit = y => { for (let x = 0, i = y * cw; x < cw; x++, i++) if (on(i)) return true; return false; };
+    let y0 = 0, y1 = ch - 1;
+    while (y0 < ch && !rowHit(y0)) y0++;
+    let g;
+    if (y0 === ch) g = { l: 0, r: 0, t: 0, b: 0, adv };
+    else {
+        while (!rowHit(y1)) y1--;
+        const colHit = x => { for (let y = y0, i = y0 * cw + x; y <= y1; y++, i += cw) if (on(i)) return true; return false; };
+        let x0 = 0, x1 = cw - 1;
+        while (!colHit(x0)) x0++;
+        while (!colHit(x1)) x1--;
+        if ((x0 === 0 || y0 === 0 || x1 === cw - 1 || y1 === ch - 1) && room < 4) return inkPx(text, font, room * 2);
+        g = { l: x0 / sc - pad, r: (x1 + 1) / sc - pad, t: y0 / sc - base, b: (y1 + 1) / sc - base, adv };
+    }
+    inkCache.set(key, g);
+    return g;
+}
+const ink = inkPx;
 const probeSvg = document.createElementNS(NS, 'svg');
 probeSvg.setAttribute('style', 'position:absolute;left:-9999px;top:0;width:10px;height:10px;visibility:hidden');
 document.body.appendChild(probeSvg);
@@ -360,15 +401,14 @@ function pickStretch(weight, family, want, text) {
 // capH + capRef = 「capRef 这个字的墨迹高度应当是 capH」，据此反推字号（截图量的是墨迹高度）。
 // 数字行一律用 base（基线）对齐：0/5/6/8 这类圆底字会比基线低 1~2pt，按墨迹底对齐会让整行跟着内容上下跳
 function makeText(parent, cls) { const t = document.createElementNS(NS, 'text'); if (cls) t.setAttribute('class', cls); parent.appendChild(t); return t; }
-function placeText(t, text, o) {
-    const family = o.family || 'var(--sans)', famCanvas = o.family === 'var(--rounded)' ? ROUNDED : SANS;
+function placeCalc(text, o, famCanvas, inkFn) {   // 按 inkFn 量出来的墨迹算字号、缩放、起点
     let size = o.size;
     if (o.capH) {   // 字号按某个参照字的墨迹高度反推（截图量的是墨迹高度）
-        const k = ink(o.capRef || '0', `${o.weight} 100px ${famCanvas}`);
+        const k = inkFn(o.capRef || '0', `${o.weight} 100px ${famCanvas}`);
         size = o.capH / ((k.b - k.t) / 100);
     }
     const font = `${o.weight} ${size}px ${famCanvas}`;
-    const g = ink(text, font);
+    const g = inkFn(text, font);
     const ratio = stretchRatio(o.weight, famCanvas, o.stretch, FONT_SUBS.sans ? text : undefined);   // 替代字体按这几个字自己量（iPhone 照旧按整串 0–9）
     let sx = 1;
     if (o.inkW) sx = o.inkW / ((g.r - g.l) * ratio);           // 横向缩放到截图上的墨迹宽度
@@ -383,6 +423,20 @@ function placeText(t, text, o) {
     else if (o.yAlign === 'c') y0 = o.y - (g.t + g.b) / 2;
     else if (o.yAlign === 't') y0 = o.y - g.t;
     else y0 = o.y - g.b;
+    return { size, font, sx, k, x0, y0, inkL, inkR };
+}
+// 诊断（?debug）：如果还用浏览器自带的量法，每一页上的字实际会偏离截图位置多少 pt
+const inkDev = params.has('debug') ? {} : null;
+function recordDev(t, text, o, famCanvas, now) {
+    const old = placeCalc(text, o, famCanvas, inkMT), edges = c => { const g = ink(text, c.font); return [c.x0 + g.l * c.k, c.x0 + g.r * c.k, c.y0 + g.t, c.y0 + g.b]; };
+    const a = edges(old), b = edges(now), d = Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+    const page = t.closest('.page'), name = page ? (page.className.match(/face-(\w+)/) || [, page.closest('#stack-r') ? 'month' : 'stack'])[1] : '?';
+    inkDev[name] = Math.max(inkDev[name] || 0, d);
+}
+function placeText(t, text, o) {
+    const family = o.family || 'var(--sans)', famCanvas = o.family === 'var(--rounded)' ? ROUNDED : SANS;
+    const c = placeCalc(text, o, famCanvas, ink), { size, sx, x0, y0, inkL, inkR } = c;
+    if (inkDev && text) recordDev(t, text, o, famCanvas, c);
     t.textContent = text;
     t.setAttribute('style', `font-family:${family};font-weight:${o.weight};font-size:${size}px;${o.stretch ? 'font-stretch:' + o.stretch + ';' : ''}${o.fill ? 'fill:' + o.fill + ';' : ''}`);
     t.setAttribute('transform', `translate(${x0} ${y0}) scale(${sx} 1)`);
@@ -775,27 +829,27 @@ const FLOAT_REF = { str: '2123', ov12: 39 / 707, gap23: 16 / 707, ov34: 36 / 707
    iPhone 上用这套数反推出的字距是 t −11.8203、gap 16.8643，测试核对这里算出来的跟它一致 */
 const SF_FLOAT = { adv: { 0: 68.82, 1: 50.44, 2: 62.78, 3: 65.49, 4: 67.61, 5: 65.17, 6: 67.23, 7: 58.88, 8: 68.78, 9: 67.55 }, oneT: -71.63, oneB: 1.17 };
 const floatInk = ch => FONT_SUBS.rounded ? { l: 0, r: SF_FLOAT.adv[ch], adv: SF_FLOAT.adv[ch] } : ink(ch, `900 100px ${ROUNDED}`);
-function floatLayout(str, t, gap) {   // 字号 100 下，按字宽 + 字距 t 排，第 2 位后面多加 gap；返回每位的墨迹左右
+function floatLayout(str, t, gap, gi = floatInk) {   // 字号 100 下，按字宽 + 字距 t 排，第 2 位后面多加 gap；返回每位的墨迹左右
     let x = 0; const out = [];
     [...str].forEach((ch, i) => {
-        const g = floatInk(ch);
+        const g = gi(ch);
         out.push({ ch, l: x + g.l, r: x + g.r, g });
         x += g.adv + t + (i === 1 ? gap : 0);
     });
     return out;
 }
 let floatCal = null;
-function calibrateFloat() {
-    if (floatCal) return floatCal;
+function calibrateFloat(gi) {   // gi 不传 = 这台设备正常用的量法（结果缓存）；诊断时传旧量法比较
+    if (floatCal && !gi) return floatCal;
     const span = L => L[3].r - L[0].l;
     const bisect = (f, lo, hi) => { for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) > 0) lo = m; else hi = m; } return (lo + hi) / 2; };
     let t = -10, gap = 0;
     for (let k = 0; k < 3; k++) {
         // 叠压越多 → t 越负；f(t) = 实际叠压比例 − 目标（t 往大走叠压变少，所以 f 递减）
-        t = bisect(tt => { const L = floatLayout(FLOAT_REF.str, tt, gap); return ((L[0].r - L[1].l) + (L[2].r - L[3].l)) / 2 / span(L) - (FLOAT_REF.ov12 + FLOAT_REF.ov34) / 2; }, -60, 30);
-        gap = bisect(gg => { const L = floatLayout(FLOAT_REF.str, t, gg); return FLOAT_REF.gap23 - (L[2].l - L[1].r) / span(L); }, -60, 80);
+        t = bisect(tt => { const L = floatLayout(FLOAT_REF.str, tt, gap, gi); return ((L[0].r - L[1].l) + (L[2].r - L[3].l)) / 2 / span(L) - (FLOAT_REF.ov12 + FLOAT_REF.ov34) / 2; }, -60, 30);
+        gap = bisect(gg => { const L = floatLayout(FLOAT_REF.str, t, gg, gi); return FLOAT_REF.gap23 - (L[2].l - L[1].r) / span(L); }, -60, 80);
     }
-    return (floatCal = { t, gap });
+    return gi ? { t, gap } : (floatCal = { t, gap });
 }
 function buildFloat(host) {
     const wrap = el('div', 'abs', host, 'width:852px;height:393px');
@@ -819,12 +873,12 @@ function buildFloat(host) {
             p.box.style.cssText = `left:${left}px;top:${top}px;width:${wd}px;height:${ht}px`;
             if (!FONT_SUBS.rounded) placeText(p.t, q.ch, { family: 'var(--rounded)', weight: 900, size: 100 * k, x: 0, xAlign: 'l', y: 12 + capH, yAlign: 'base', fill: colors[i] });
             else {
-                // 替代字形塞进 iPhone 的框：字号让两种字体「1」一样高、墨迹顶对齐，横向缩放到 SF 字宽；起点和 iPhone 一样在框的左边
-                const s1 = ink('1', `900 100px ${ROUNDED}`), S = 100 * k * (one.b - one.t) / (s1.b - s1.t);
-                const base = 12 + capH + one.t * k - s1.t * S / 100, sx = wd / (ink(q.ch, `900 100px ${ROUNDED}`).adv * S / 100);
+                // 替代字形的墨迹塞进 SF 的墨迹框（框 = 这一位的 left/wd）：字号让两种字体「1」一样高、墨迹顶对齐，横向缩放到 SF 墨迹宽
+                const s1 = ink('1', `900 100px ${ROUNDED}`), S = 100 * k * (one.b - one.t) / (s1.b - s1.t), gs = ink(q.ch, `900 100px ${ROUNDED}`);
+                const base = 12 + capH + one.t * k - s1.t * S / 100, sx = wd / ((gs.r - gs.l) * S / 100);
                 p.t.textContent = q.ch;
                 p.t.setAttribute('style', `font-family:var(--rounded);font-weight:900;font-size:${S}px;fill:${colors[i]}`);
-                p.t.setAttribute('transform', `translate(0 ${base}) scale(${sx} 1)`);
+                p.t.setAttribute('transform', `translate(${-gs.l * S / 100 * sx} ${base}) scale(${sx} 1)`);
             }
         });
         const ccx = x0 + (L[1].r + L[2].l) / 2 * k;
@@ -1242,14 +1296,25 @@ function floatMetricsText() {
     const rows = [...'0123456789'].map(ch => { const g = ink(ch, f); return `${ch}:${q(g.l)},${q(g.r)},${q(g.adv)}`; });
     return `圆体 1高 ${q(one.t)},${q(one.b)}\n${[0, 3, 6, 9].map(i => rows.slice(i, i + 3).join(' ')).join('\n')}`;   // 一行 3 个：竖着拿时屏宽只有 393，一行 5 个右边会被切掉（10-29 用户截图缺了 4 和 9）
 }
+// 诊断：旧量法（浏览器自带、量不准的那种）会偏多少——各页字的最大偏移 pt，漂浮样式按 14:54 比字高
+function inkDevText() {
+    const pages = Object.entries(inkDev || {}).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(' / ');
+    let fl = '';
+    if (!FONT_SUBS.rounded) {
+        const oneT = ink('1', `900 100px ${ROUNDED}`), capOf = cal => { const L = floatLayout('1454', cal.t, cal.gap, cal.gi); return (oneT.b - oneT.t) * 714.7 / (L[3].r - L[0].l); };
+        const giOld = ch => inkMT(ch, `900 100px ${ROUNDED}`), cOld = Object.assign(calibrateFloat(giOld), { gi: giOld }), cNew = calibrateFloat();
+        fl = `\n漂浮 14:54 字高 旧 ${capOf(cOld).toFixed(1)} → 新 ${capOf(cNew).toFixed(1)} pt（原生截图 ≈281）`;
+    }
+    return `量字：逐像素（浏览器自带的${INK_BROKEN ? '只给字宽' : '有墨迹框'}）。旧量法偏移(pt) ${pages}${fl}`;
+}
 if (params.has('debug')) {
     const fam = SANS, n0 = (w, cap) => { const k = ink('1', `${w} 100px ${fam}`), sz = cap / ((k.b - k.t) / 100), g = ink('0', `${w} ${sz}px ${fam}`); return g.r - g.l; };
     const dg = pickStretch(700, fam, DIGITAL_W[0] / n0(700, 282)), so = pickStretch(500, fam, SOLAR_W[0] / n0(500, 148));
     const tries = ['37.5%', '50%', '62.5%', '75%', '87.5%', '112.5%', '125%', '150%'].map(c => c + '→' + stretchRatio(700, fam, c).toFixed(2)).join(' ');
     const box = el('div', '', document.body, 'position:fixed;left:8px;top:8px;z-index:99;background:rgba(0,0,0,.8);color:#0f0;font:11px/1.4 monospace;padding:6px;white-space:pre-wrap;word-break:break-all;max-width:calc(100vw - 16px);pointer-events:none');
-    box.textContent = `数字 选 ${dg.stretch}（比 ${dg.ratio.toFixed(2)}）  日光 选 ${so.stretch}（比 ${so.ratio.toFixed(2)}）\n各档实测字宽比：${tries}\n漂浮校准 ${JSON.stringify(calibrateFloat())}\n${floatMetricsText()}\n替代字体 ${JSON.stringify({ sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded })}\nview ${JSON.stringify(view)}\nUA ${navigator.userAgent}`;
+    box.textContent = `数字 选 ${dg.stretch}（比 ${dg.ratio.toFixed(2)}）  日光 选 ${so.stretch}（比 ${so.ratio.toFixed(2)}）\n各档实测字宽比：${tries}\n漂浮校准 ${JSON.stringify(calibrateFloat())}\n${floatMetricsText()}\n${inkDevText()}\n替代字体 ${JSON.stringify({ sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded })}\nview ${JSON.stringify(view)}\nUA ${navigator.userAgent}`;
 }
-window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet, pickStretch, calibrateFloat, fontSubs: { sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded } };
+window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet, pickStretch, calibrateFloat, inkPx, inkMT, inkBroken: INK_BROKEN, bootMs: performance.now(), fontSubs: { sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded } };
 }
 </script>
 </body>
