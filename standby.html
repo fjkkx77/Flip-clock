@@ -768,10 +768,17 @@ function buildSolar(host) {
    · 冒号两个直径 69.5 的圆点，压在第 2、3 位之间，竖直位置 ±66。
    字距和中缝不能写死成像素（字体不同、字宽就不同），在这台设备上用 21:23 的实测叠压量反推（calibrateFloat） */
 const FLOAT_REF = { str: '2123', ov12: 39 / 707, gap23: 16 / 707, ov34: 36 / 707 };
+/* 没有 SF 圆体的设备照 iPhone 的尺寸排（2026-10-29）：替代圆体每个数字一样宽（65），SF 圆体不等宽（「1」50、「0」69），
+   拿替代字体自己的字宽去反推字距，换个时间就叠得太多、字被拉高 8%–20%。
+   下面是用户 iPhone 14 Pro（iOS 27）上 ?debug 实测的 SF 圆体 900、字号 100：Safari 的 canvas 量不出墨迹左右，给出的就是字宽，
+   iPhone 上的页面本来就按这些数排，所以这里照抄，排出来每个数字的位置、宽、高都和 iPhone 一样；字形缩放到这个框里。
+   iPhone 上用这套数反推出的字距是 t −11.8203、gap 16.8643，测试核对这里算出来的跟它一致 */
+const SF_FLOAT = { adv: { 0: 68.82, 1: 50.44, 2: 62.78, 3: 65.49, 4: 67.61, 5: 65.17, 6: 67.23, 7: 58.88, 8: 68.78, 9: 67.55 }, oneT: -71.63, oneB: 1.17 };
+const floatInk = ch => FONT_SUBS.rounded ? { l: 0, r: SF_FLOAT.adv[ch], adv: SF_FLOAT.adv[ch] } : ink(ch, `900 100px ${ROUNDED}`);
 function floatLayout(str, t, gap) {   // 字号 100 下，按字宽 + 字距 t 排，第 2 位后面多加 gap；返回每位的墨迹左右
     let x = 0; const out = [];
     [...str].forEach((ch, i) => {
-        const g = ink(ch, `900 100px ${ROUNDED}`);
+        const g = floatInk(ch);
         out.push({ ch, l: x + g.l, r: x + g.r, g });
         x += g.adv + t + (i === 1 ? gap : 0);
     });
@@ -805,12 +812,20 @@ function buildFloat(host) {
         const str = pad2(d.getHours()) + pad2(d.getMinutes());
         const cal = calibrateFloat(), L = floatLayout(str, cal.t, cal.gap);
         const k = 714.7 / (L[3].r - L[0].l), x0 = 425.5 - 714.7 / 2 - L[0].l * k, cy = 196.7;
-        const one = ink('1', `900 100px ${ROUNDED}`), capH = (one.b - one.t) * k;   // 用「1」的高度当字高，按它竖直居中
+        const one = FONT_SUBS.rounded ? { t: SF_FLOAT.oneT, b: SF_FLOAT.oneB } : ink('1', `900 100px ${ROUNDED}`), capH = (one.b - one.t) * k;   // 用「1」的高度当字高，按它竖直居中
         const colors = night ? ['#990000', '#990000', '#990000', '#990000'] : [pal[0], pal[1], pal[0], pal[1]];
         L.forEach((q, i) => {
             const p = parts[i], left = x0 + q.l * k, wd = (q.r - q.l) * k, top = cy - capH / 2 - 12, ht = capH + 24;
             p.box.style.cssText = `left:${left}px;top:${top}px;width:${wd}px;height:${ht}px`;
-            placeText(p.t, q.ch, { family: 'var(--rounded)', weight: 900, size: 100 * k, x: 0, xAlign: 'l', y: 12 + capH, yAlign: 'base', fill: colors[i] });
+            if (!FONT_SUBS.rounded) placeText(p.t, q.ch, { family: 'var(--rounded)', weight: 900, size: 100 * k, x: 0, xAlign: 'l', y: 12 + capH, yAlign: 'base', fill: colors[i] });
+            else {
+                // 替代字形塞进 iPhone 的框：字号让两种字体「1」一样高、墨迹顶对齐，横向缩放到 SF 字宽；起点和 iPhone 一样在框的左边
+                const s1 = ink('1', `900 100px ${ROUNDED}`), S = 100 * k * (one.b - one.t) / (s1.b - s1.t);
+                const base = 12 + capH + one.t * k - s1.t * S / 100, sx = wd / (ink(q.ch, `900 100px ${ROUNDED}`).adv * S / 100);
+                p.t.textContent = q.ch;
+                p.t.setAttribute('style', `font-family:var(--rounded);font-weight:900;font-size:${S}px;fill:${colors[i]}`);
+                p.t.setAttribute('transform', `translate(0 ${base}) scale(${sx} 1)`);
+            }
         });
         const ccx = x0 + (L[1].r + L[2].l) / 2 * k;
         colonBox.style.cssText = `left:${ccx - 35}px;top:${cy - 101}px;width:70px;height:202px`;

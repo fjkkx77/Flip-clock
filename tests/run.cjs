@@ -436,6 +436,9 @@ function layoutChecks(tag, g) {
   const scales = await c.ev(`[...document.querySelectorAll('.face-digital text, .face-solar text')].slice(0, 12)
     .map(t => (t.getAttribute('transform') || '').match(/scale\\(([\\d.]+)/)).filter(Boolean).map(m => +m[1])`);
   check('替代字体下数字/日光样式的数字横向缩放在 ±3% 以内（宽度直接调到位）', scales.length >= 8 && scales.every(s => Math.abs(s - 1) <= 0.03), scales);
+  // 漂浮样式照抄 iPhone 实测的 SF 圆体字宽（SF_FLOAT）；用户 iPhone 14 Pro 的 ?debug 显示字距校准 t −11.8203、gap 16.8643，这里算出来要一样
+  const fcal = await c.ev('__sb.calibrateFloat()');
+  check('漂浮样式：没有 SF 时按 iPhone 的字宽排，反推的字距跟 iPhone 一致（±0.01）', Math.abs(fcal.t + 11.8203) < 0.01 && Math.abs(fcal.gap - 16.8643) < 0.01, fcal);
   c.close();
   // ② 模拟有 SF 的设备（iPhone/Mac）：量到 -apple-system / ui-rounded 跟 monospace 不一样宽 → 不下载、不改字体
   c = await open(852, 393, 3);
