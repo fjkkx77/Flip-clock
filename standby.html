@@ -824,11 +824,13 @@ function buildSolar(host) {
 const FLOAT_REF = { str: '2123', ov12: 39 / 707, gap23: 16 / 707, ov34: 36 / 707 };
 /* 没有 SF 圆体的设备照 iPhone 的尺寸排（2026-10-29）：替代圆体每个数字一样宽（65），SF 圆体不等宽（「1」50、「0」69），
    拿替代字体自己的字宽去反推字距，换个时间就叠得太多、字被拉高 8%–20%。
-   下面是用户 iPhone 14 Pro（iOS 27）上 ?debug 实测的 SF 圆体 900、字号 100：Safari 的 canvas 量不出墨迹左右，给出的就是字宽，
-   iPhone 上的页面本来就按这些数排，所以这里照抄，排出来每个数字的位置、宽、高都和 iPhone 一样；字形缩放到这个框里。
-   iPhone 上用这套数反推出的字距是 t −11.8203、gap 16.8643，测试核对这里算出来的跟它一致 */
-const SF_FLOAT = { adv: { 0: 68.82, 1: 50.44, 2: 62.78, 3: 65.49, 4: 67.61, 5: 65.17, 6: 67.23, 7: 58.88, 8: 68.78, 9: 67.55 }, oneT: -71.63, oneB: 1.17 };
-const floatInk = ch => FONT_SUBS.rounded ? { l: 0, r: SF_FLOAT.adv[ch], adv: SF_FLOAT.adv[ch] } : ink(ch, `900 100px ${ROUNDED}`);
+   下面是用户 iPhone 14 Pro（iOS 27）上 ?debug 逐像素实测的 SF 圆体 900、字号 100：[墨迹左, 墨迹右, 字宽]，和「1」的墨迹上/下
+   （第一版是 Safari measureText 给的，左恒 0、右恒为字宽，不是真墨迹，10-29 晚上换成逐像素量的）。
+   照这些数排，每个数字的位置、宽、高都和 iPhone 一样；替代字形的墨迹缩放进 SF 的墨迹框。
+   iPhone 上用这套数反推出的字距是 t −16.5986、gap 6.4570，测试核对这里算出来的跟它一致 */
+const SF_FLOAT = { ink: { 0: [3.75, 65, 68.82], 1: [2.25, 40.5, 50.44], 2: [4.5, 59.75, 62.78], 3: [4.75, 61.75, 65.49], 4: [3.25, 65.5, 67.61],
+    5: [6.25, 62, 65.17], 6: [3.75, 63.5, 67.23], 7: [2, 56, 58.88], 8: [3.75, 65, 68.78], 9: [4, 63.75, 67.55] }, oneT: -71.5, oneB: 1.25 };
+const floatInk = ch => { if (!FONT_SUBS.rounded) return ink(ch, `900 100px ${ROUNDED}`); const [l, r, adv] = SF_FLOAT.ink[ch]; return { l, r, adv }; };
 function floatLayout(str, t, gap, gi = floatInk) {   // 字号 100 下，按字宽 + 字距 t 排，第 2 位后面多加 gap；返回每位的墨迹左右
     let x = 0; const out = [];
     [...str].forEach((ch, i) => {
@@ -1294,7 +1296,11 @@ entryHint();
 function floatMetricsText() {
     const f = `900 100px ${ROUNDED}`, one = ink('1', f), q = v => +v.toFixed(2);
     const rows = [...'0123456789'].map(ch => { const g = ink(ch, f); return `${ch}:${q(g.l)},${q(g.r)},${q(g.adv)}`; });
-    return `圆体 1高 ${q(one.t)},${q(one.b)}\n${[0, 3, 6, 9].map(i => rows.slice(i, i + 3).join(' ')).join('\n')}`;   // 一行 3 个：竖着拿时屏宽只有 393，一行 5 个右边会被切掉（10-29 用户截图缺了 4 和 9）
+    // 字偶距：两个数字连着排比各自字宽之和少多少（字号 100，只列不为 0 的）。时钟里相邻的两位只有 0–5 打头
+    mctx.font = f;
+    const w = s => mctx.measureText(s).width, kern = [];
+    for (const a of '012345') for (const b of '0123456789') { const k = w(a + b) - w(a) - w(b); if (Math.abs(k) >= 0.01) kern.push(`${a}${b}${q(k)}`); }
+    return `圆体 1高 ${q(one.t)},${q(one.b)}\n${[0, 3, 6, 9].map(i => rows.slice(i, i + 3).join(' ')).join('\n')}\n字偶距 ${kern.length ? kern.join(' ') : '全为 0'}`;   // 一行 3 个：竖着拿时屏宽只有 393，一行 5 个右边会被切掉（10-29 用户截图缺了 4 和 9）
 }
 // 诊断：旧量法（浏览器自带、量不准的那种）会偏多少——各页字的最大偏移 pt，漂浮样式按 14:54 比字高
 function inkDevText() {

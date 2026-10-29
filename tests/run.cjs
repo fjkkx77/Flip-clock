@@ -436,7 +436,7 @@ function layoutChecks(tag, g) {
   const scales = await c.ev(`[...document.querySelectorAll('.face-digital text, .face-solar text')].slice(0, 12)
     .map(t => (t.getAttribute('transform') || '').match(/scale\\(([\\d.]+)/)).filter(Boolean).map(m => +m[1])`);
   check('替代字体下数字/日光样式的数字横向缩放在 ±3% 以内（宽度直接调到位）', scales.length >= 8 && scales.every(s => Math.abs(s - 1) <= 0.03), scales);
-  // 漂浮样式照抄 iPhone 实测的 SF 圆体字宽（SF_FLOAT）；用户 iPhone 14 Pro 的 ?debug 显示字距校准 t −11.8203、gap 16.8643，这里算出来要一样
+  // 漂浮样式照抄 iPhone 逐像素实测的 SF 圆体墨迹（SF_FLOAT）；用户 iPhone 14 Pro 的 ?debug 显示字距校准 t −16.5986、gap 6.4570，这里算出来要一样
   // 量墨迹：逐像素的结果要跟字体文件里的轮廓真值一致（真值用 fontTools BoundsPen 从 fonts/*.woff 读出，字号 100 下的 左/右/上/下）。
   // 浏览器自带的 measureText 墨迹框不用：Chrome 往外多算约 1 像素（字号 21 差 6%），iPhone Safari 干脆只给字宽
   const TRUTH = { 'SB Rounded|900': { 0: [3.5, 61.5, -74, 1], 1: [9.7, 46.7, -73, 0], 4: [1.2, 60.5, -73, 0], 7: [7, 58.3, -73, 0], 9: [4.2, 60.5, -74, 1] },
@@ -448,7 +448,7 @@ function layoutChecks(tag, g) {
     return worst; })()`);
   check('逐像素量墨迹跟字体文件真值差 ≤0.3%（字号 21/100/282）', inkErr <= 0.3, inkErr);
   const fcal = await c.ev('__sb.calibrateFloat()');
-  check('漂浮样式：没有 SF 时按 iPhone 的字宽排，反推的字距跟 iPhone 一致（±0.01）', Math.abs(fcal.t + 11.8203) < 0.01 && Math.abs(fcal.gap - 16.8643) < 0.01, fcal);
+  check('漂浮样式：没有 SF 时按 iPhone 的墨迹排，反推的字距跟 iPhone 一致（±0.01）', Math.abs(fcal.t + 16.5986) < 0.01 && Math.abs(fcal.gap - 6.4570) < 0.01, fcal);
   c.close();
   // ② 模拟有 SF 的设备（iPhone/Mac）：量到 -apple-system / ui-rounded 跟 monospace 不一样宽 → 不下载、不改字体
   c = await open(852, 393, 3);
