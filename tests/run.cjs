@@ -6,7 +6,7 @@ const { open, sleep } = require('./cdp.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png',
-  '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain' };
+  '.woff2': 'font/woff2', '.woff': 'font/woff', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain' };
 const server = http.createServer((q, s) => {
   let rel = decodeURIComponent(new URL(q.url, 'http://x').pathname);
   const f = path.join(ROOT, rel === '/' ? 'index.html' : rel);
@@ -425,6 +425,33 @@ function layoutChecks(tag, g) {
   await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 }); await sleep(700);
   check('主页按 S → 进入待机显示', /standby\.html$/.test(await c.ev('location.pathname')));
   await c.vshot(path.join(__dirname, 'shots', 'sb852-clock.png'));
+  c.close();
+
+  /* ---------- 待机显示的替代字体（2026-10-29 用户选方案 A：有 SF 的设备照旧，没有的换开源字体） ---------- */
+  // ① 测试机是 Windows Chrome，没有 SF：两种替代字体都要加载，数字/日光的数字不能再靠横向缩放（会把竖笔压细，日光样式细过 40%）
+  c = await open(852, 393, 3);
+  await c.goto(SB + '?t=2026-10-26T14:54:10&page=1&face=0&freeze=1'); await sleep(900);
+  const subs = await c.ev(`({ s: __sb.fontSubs, loaded: [...document.fonts].filter(f => /SB /.test(f.family) && f.status === 'loaded').length })`);
+  check('没有 SF 的设备：加载替代字体（Roboto Flex 6 档 + 圆体 1 个）', subs.s.sans && subs.s.rounded && subs.loaded === 7, subs);
+  const scales = await c.ev(`[...document.querySelectorAll('.face-digital text, .face-solar text')].slice(0, 12)
+    .map(t => (t.getAttribute('transform') || '').match(/scale\\(([\\d.]+)/)).filter(Boolean).map(m => +m[1])`);
+  check('替代字体下数字/日光样式的数字横向缩放在 ±3% 以内（宽度直接调到位）', scales.length >= 8 && scales.every(s => Math.abs(s - 1) <= 0.03), scales);
+  c.close();
+  // ② 模拟有 SF 的设备（iPhone/Mac）：量到 -apple-system / ui-rounded 跟 monospace 不一样宽 → 不下载、不改字体
+  c = await open(852, 393, 3);
+  await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `{ const m = CanvasRenderingContext2D.prototype.measureText;
+    CanvasRenderingContext2D.prototype.measureText = function (t) { const r = m.call(this, t); return /apple-system|ui-rounded/.test(this.font) ? { width: r.width + 1 } : r; }; }` });
+  await c.goto(SB + '?t=2026-10-26T14:54:10&page=1&face=0'); await sleep(900);
+  const apple = await c.ev(`({ s: __sb.fontSubs, req: performance.getEntriesByType('resource').filter(e => /sb-/.test(e.name)).length,
+    sans: getComputedStyle(document.documentElement).getPropertyValue('--sans').trim().slice(0, 10), txt: document.querySelector('.face-digital text').textContent })`);
+  check('有 SF 的设备：不下载替代字体、字体变量不动、照常显示', !apple.s.sans && !apple.s.rounded && apple.req === 0 && apple.sans === 'system-ui,' && apple.txt === '1', apple);
+  c.close();
+  // ③ 字体下载失败：不能卡住，照常用系统字体显示
+  c = await open(852, 393, 3);
+  await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `FontFace.prototype.load = function () { return Promise.reject(new Error('blocked')); };` });
+  await c.goto(SB + '?t=2026-10-26T14:54:10&page=1&face=0'); await sleep(900);
+  const failed = await c.ev(`({ ok: !!window.__sb, added: [...document.fonts].filter(f => /SB /.test(f.family)).length, txt: [...document.querySelectorAll('.face-digital text')].slice(0, 4).map(t => t.textContent).join('') })`);
+  check('替代字体下载失败：照常显示（用系统字体），不卡住', failed.ok && failed.added === 0 && failed.txt === '1454', failed);
   c.close();
 
   /* ---------- 待机显示：电脑 1707×1067（16:10，不是 852:393）→ 不能有黑边 ---------- */

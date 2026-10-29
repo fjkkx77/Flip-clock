@@ -161,6 +161,36 @@
 
 <script>
 'use strict';
+/* 没有 SF 字体的设备（Windows、安卓）数字换成开源替代字体（2026-10-29 用户要求「各平台照 iPhone 的样子显示」，选了方案 A：
+   iPhone / Mac 照旧用系统 SF、不下载；只有缺 SF 的设备才加载 fonts/sb-*.woff，只含 0–9 和冒号，别的字照旧走系统字体）。
+   判断：用这个字体名量一串数字，跟只用 monospace 量的一样宽 = 这台设备没有这个字体。
+   字宽、字距校准都是启动时在设备上量的，用错字体量就全错，所以等字体加载好再启动主程序；
+   最多等 3 秒，超时或失败就用系统字体照常显示，晚到的字体不再启用（启用了会跟已经量好的尺寸对不上）。
+   Roboto Flex 按 (SF 字重, 宽度范围) 拆成几个文件，原因和每档字重怎么对出来的写在 tools/build-standby-fonts.py */
+const SANS_FACES = [['500n', 500, '90% 100.9%'], ['500w', 500, '101% 151%'], ['600n', 600, '90% 100.9%'], ['600w', 600, '101% 151%'],
+    ['700c', 700, '25% 90%'], ['700n', 700, '90% 100.9%']];
+const FONT_SUBS = (() => {
+    const c = document.createElement('canvas').getContext('2d');
+    const w = fam => { c.font = '700 100px ' + fam; return c.measureText('0123456789:').width; };
+    const mono = w('monospace'), has = fam => w(fam + ', monospace') !== mono;
+    const root = document.documentElement, cs = getComputedStyle(root), out = { faces: [], sans: false, rounded: false };
+    const face = (name, file, desc) => out.faces.push(new FontFace(name, `url(fonts/${file}) format("woff")`, Object.assign({ unicodeRange: 'U+30-3A' }, desc)));
+    const prepend = (v, name) => root.style.setProperty(v, `"${name}", ` + cs.getPropertyValue(v).trim());
+    if (!has('-apple-system') && !has('BlinkMacSystemFont')) {
+        out.sans = true; prepend('--sans', 'SB Sans');
+        SANS_FACES.forEach(([k, weight, stretch]) => face('SB Sans', `sb-sans-${k}.woff`, { weight: String(weight), stretch }));
+    }
+    if (!has('ui-rounded') && !has('"SF Pro Rounded"')) { out.rounded = true; prepend('--rounded', 'SB Rounded'); face('SB Rounded', 'sb-rounded.woff', { weight: '100 1000' }); }
+    return out;
+})();
+let started = false;
+const start = () => { if (!started) { started = true; main(); } };
+if (FONT_SUBS.faces.length) {
+    Promise.all(FONT_SUBS.faces.map(f => f.load())).then(fs => { if (!started) fs.forEach(f => document.fonts.add(f)); start(); }, start);
+    setTimeout(start, 3000);
+} else start();
+
+function main() {
 const $ = id => document.getElementById(id);
 const NS = 'http://www.w3.org/2000/svg';
 const W = 852, H = 393;
@@ -293,11 +323,11 @@ const probeSvg = document.createElementNS(NS, 'svg');
 probeSvg.setAttribute('style', 'position:absolute;left:-9999px;top:0;width:10px;height:10px;visibility:hidden');
 document.body.appendChild(probeSvg);
 const stretchCache = {};
-function stretchRatio(weight, family, stretch) {
+function stretchRatio(weight, family, stretch, text = '0123456789') {
     if (!stretch || stretch === '100%') return 1;
-    const key = weight + family + stretch;
+    const key = weight + family + stretch + text;
     if (stretchCache[key]) return stretchCache[key];
-    const mk = st => { const t = document.createElementNS(NS, 'text'); t.textContent = '0123456789';
+    const mk = st => { const t = document.createElementNS(NS, 'text'); t.textContent = text;
         t.setAttribute('style', `font: ${weight} 100px ${family}; font-stretch: ${st}`); probeSvg.appendChild(t); const w = t.getComputedTextLength(); t.remove(); return w; };
     const a = mk('100%'), b = mk(stretch);
     return (stretchCache[key] = a > 0 && b > 0 ? b / a : 1);
@@ -307,9 +337,16 @@ function stretchRatio(weight, family, stretch) {
    字形还是正常宽度，再被横向压扁，笔画就细了（用户 2026-10-26 真机截图）。
    所以这里逐档实测：拉伸后字宽真的变了的才算支持，挑最接近目标比例的那档，剩下的差距才用横向缩放补 */
 const pickCache = {};
-function pickStretch(weight, family, want) {
-    const key = weight + family + want.toFixed(3);
+function pickStretch(weight, family, want, text) {
+    const key = weight + family + want.toFixed(3) + (text || '');
     if (pickCache[key]) return pickCache[key];
+    if (FONT_SUBS.sans && family === SANS) {
+        // 替代字体的宽度是连续可调的：直接找正好的宽度，不再靠横向缩放补（缩放会把竖笔压细/拉粗，2026-10-29 日光样式细了 40%）
+        let lo = want < 1 ? 25 : 100, hi = want < 1 ? 100 : 151;
+        for (let i = 0; i < 16; i++) { const m = (lo + hi) / 2; if (stretchRatio(weight, family, m.toFixed(2) + '%', text) > want) hi = m; else lo = m; }
+        const st = ((lo + hi) / 2).toFixed(2) + '%';
+        return (pickCache[key] = { stretch: st, ratio: stretchRatio(weight, family, st, text) });
+    }
     const cands = want < 1 ? ['37.5%', '50%', '62.5%', '75%', '87.5%'] : ['112.5%', '125%', '150%'];
     let best = { stretch: '100%', ratio: 1 };
     for (const c of cands) {
@@ -332,7 +369,7 @@ function placeText(t, text, o) {
     }
     const font = `${o.weight} ${size}px ${famCanvas}`;
     const g = ink(text, font);
-    const ratio = stretchRatio(o.weight, famCanvas, o.stretch);
+    const ratio = stretchRatio(o.weight, famCanvas, o.stretch, FONT_SUBS.sans ? text : undefined);   // 替代字体按这几个字自己量（iPhone 照旧按整串 0–9）
     let sx = 1;
     if (o.inkW) sx = o.inkW / ((g.r - g.l) * ratio);           // 横向缩放到截图上的墨迹宽度
     const k = ratio * sx;
@@ -504,13 +541,16 @@ const PALETTES = {
 };
 const colorIdx = k => Math.min(+store.get('sbColor_' + k, 0) || 0, (PALETTES[k] || [0]).length - 1);
 /* 大号数字的字宽：截图里量到过的数字直接用实测墨迹宽（三个时间 14:54 / 02:29 / 21:23 凑出来的），
-   没截到的数字按字体自己的比例推。字形先挑系统字体真支持的宽度档（pickStretch），差的再横向缩放 */
+   没截到的数字按字体自己的比例推。字形先挑系统字体真支持的宽度档（pickStretch），差的再横向缩放。
+   替代字体（宽度连续可调）每个数字单独调到截图宽度：Roboto Flex 的「1」比 SF 的宽，只按「0」调的话日光的「1」要再压窄 26%，竖笔跟着变细 */
 function digitGlyphs(str, cfg) {
     const k = ink(cfg.capRef, `${cfg.weight} 100px ${SANS}`), size = cfg.capH / ((k.b - k.t) / 100);
     const nat = ch => { const g = ink(ch, `${cfg.weight} ${size}px ${SANS}`); return g.r - g.l; };
     const want = cfg.table[cfg.ref] / nat(cfg.ref);              // 截图里的字比正常宽度窄/宽多少
     const pick = pickStretch(cfg.weight, SANS, want);
-    return { size, stretch: pick.stretch, widths: [...str].map(ch => cfg.table[ch] !== undefined ? cfg.table[ch] : nat(ch) * want) };
+    const widths = [...str].map(ch => cfg.table[ch] !== undefined ? cfg.table[ch] : nat(ch) * want);
+    const stretches = [...str].map((ch, i) => FONT_SUBS.sans ? pickStretch(cfg.weight, SANS, widths[i] / nat(ch), ch).stretch : pick.stretch);
+    return { size, stretches, widths };
 }
 // 数字样式：截图实测墨迹宽（字高 282）。0/2/9 来自 02:29，1/4/5 来自 14:54，2/1/3 来自 21:23；6/7/8 没截到
 const DIGITAL_W = { 0: 101.7, 1: 69, 2: 97, 3: 100.6, 4: 110, 5: 97, 9: 100 };
@@ -530,7 +570,7 @@ function buildDigital(host) {
         R[3] = 567; R[2] = R[3] - w[3] - 11.5;
         const colonR = R[2] - w[2] - 12.3, colonL = colonR - 44.3;
         R[1] = colonL - 12; R[0] = R[1] - w[1] - 11.5;
-        [...str].forEach((ch, i) => placeText(digits[i], ch, { weight: 700, size: G.size, stretch: G.stretch, inkW: w[i], x: R[i], xAlign: 'r', y: 338.7, yAlign: 'base', fill: col }));
+        [...str].forEach((ch, i) => placeText(digits[i], ch, { weight: 700, size: G.size, stretch: G.stretches[i], inkW: w[i], x: R[i], xAlign: 'r', y: 338.7, yAlign: 'base', fill: col }));
         dots.forEach(c => { c.setAttribute('cx', colonL + 22.15); c.setAttribute('style', 'fill:' + col); });
         // 右上角：「26 周一」第一行（31pt，日期白、星期跟数字同色，基线 77）；第二行气温（开了才有，基线 112.8）
         date1.textContent = '';
@@ -711,7 +751,7 @@ function buildSolar(host) {
         const ccx = L[1] + w[1] + gapL + colon / 2;
         L[2] = ccx + colon / 2 + gapR; L[3] = L[2] + w[2] + dd;
         const fill = 'url(#solarText)';
-        [...str].forEach((ch, i) => placeText(solarDigits[i], ch, { weight: 500, size: G.size, stretch: G.stretch, inkW: w[i], x: L[i], xAlign: 'l', y: 271.4, yAlign: 'base', fill }));
+        [...str].forEach((ch, i) => placeText(solarDigits[i], ch, { weight: 500, size: G.size, stretch: G.stretches[i], inkW: w[i], x: L[i], xAlign: 'l', y: 271.4, yAlign: 'base', fill }));
         dots[0].setAttribute('cx', ccx); dots[0].setAttribute('cy', 159.7);
         dots[1].setAttribute('cx', ccx); dots[1].setAttribute('cy', 235.2);
         dots.forEach(c => c.setAttribute('style', 'fill:' + fill));
@@ -1180,14 +1220,22 @@ weather.load(false);
 onFit.push(refresh);   // 屏幕尺寸变了：日光的光晕中心等按核心区位置重算
 entryHint();
 // 诊断：地址加 ?debug，左上角显示这台设备实际挑中的字宽档、漂浮的字距校准、画板尺寸——真机字形不对时截这张图就能看出原因
+// 漂浮样式圆体每个数字的墨迹左/右、字宽（字号 100）和「1」的墨迹上/下：在 iPhone 上截这一行，
+// 没有 SF 圆体的设备就能照 SF 的尺寸排（2026-10-29：替代字体的字形左右留白跟 SF 不同，按 21:23 反推的字距套到别的时间会叠得太多、字被拉高）
+function floatMetricsText() {
+    const f = `900 100px ${ROUNDED}`, one = ink('1', f), q = v => +v.toFixed(2);
+    const rows = [...'0123456789'].map(ch => { const g = ink(ch, f); return `${ch}:${q(g.l)},${q(g.r)},${q(g.adv)}`; });
+    return `圆体 1高 ${q(one.t)},${q(one.b)}\n${rows.slice(0, 5).join(' ')}\n${rows.slice(5).join(' ')}`;
+}
 if (params.has('debug')) {
     const fam = SANS, n0 = (w, cap) => { const k = ink('1', `${w} 100px ${fam}`), sz = cap / ((k.b - k.t) / 100), g = ink('0', `${w} ${sz}px ${fam}`); return g.r - g.l; };
     const dg = pickStretch(700, fam, DIGITAL_W[0] / n0(700, 282)), so = pickStretch(500, fam, SOLAR_W[0] / n0(500, 148));
     const tries = ['37.5%', '50%', '62.5%', '75%', '87.5%', '112.5%', '125%', '150%'].map(c => c + '→' + stretchRatio(700, fam, c).toFixed(2)).join(' ');
     const box = el('div', '', document.body, 'position:fixed;left:8px;top:8px;z-index:99;background:rgba(0,0,0,.8);color:#0f0;font:11px/1.4 monospace;padding:6px;white-space:pre;pointer-events:none');
-    box.textContent = `数字 选 ${dg.stretch}（比 ${dg.ratio.toFixed(2)}）  日光 选 ${so.stretch}（比 ${so.ratio.toFixed(2)}）\n各档实测字宽比：${tries}\n漂浮校准 ${JSON.stringify(calibrateFloat())}\nview ${JSON.stringify(view)}\nUA ${navigator.userAgent}`;
+    box.textContent = `数字 选 ${dg.stretch}（比 ${dg.ratio.toFixed(2)}）  日光 选 ${so.stretch}（比 ${so.ratio.toFixed(2)}）\n各档实测字宽比：${tries}\n漂浮校准 ${JSON.stringify(calibrateFloat())}\n${floatMetricsText()}\n替代字体 ${JSON.stringify({ sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded })}\nview ${JSON.stringify(view)}\nUA ${navigator.userAgent}`;
 }
-window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet, pickStretch, calibrateFloat };
+window.__sb = { pagers: { hPager, facePager, stackLPager, stackRPager }, refresh, lunarText, sunPos, MAKEUP_WORKDAYS, view, FACE_ORDER, openSheet, closeSheet, pickStretch, calibrateFloat, fontSubs: { sans: FONT_SUBS.sans, rounded: FONT_SUBS.rounded } };
+}
 </script>
 </body>
 </html>

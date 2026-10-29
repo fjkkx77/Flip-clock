@@ -9,7 +9,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const { open, sleep } = require('./cdp.js');
 
 const ROOT = path.resolve(process.argv[2] || path.join(__dirname, '..'));
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.woff2': 'font/woff2', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.woff2': 'font/woff2', '.woff': 'font/woff', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 const server = http.createServer((q, s) => {
   const rel = decodeURIComponent(new URL(q.url, 'http://x').pathname);
   const f = path.join(ROOT, rel === '/' ? 'index.html' : rel);
