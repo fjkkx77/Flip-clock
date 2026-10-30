@@ -60,6 +60,7 @@
   上一版写死 50%，iPhone 上没生效，字被硬压扁、笔画变细。真机还不对就让用户开 `standby.html?debug` 截图，左上角有每档实测字宽比。
 - **替代字体（2026-10-29，用户选方案 A；回滚点标签 `rollback-before-font-sub` = dba7e36）**：iPhone/Mac 照旧用系统 SF，
   没有 SF 的设备（Windows、安卓）数字换成开源字体：Roboto Flex（`fonts/sb-sans-*.woff`）和 Baloo 2（`fonts/sb-rounded.woff`，10-30 前是 M PLUS Rounded 1c），只含 0–9 和冒号。
+  **中文不换字体（用户 2026-10-30 定）**：中文按各平台默认显示（iOS 苹方、Windows 微软雅黑、安卓/Linux 系统无衬线），`--sans` 字体栈已经是这样，**别去统一中文字体**。
   - 判断有没有 SF：canvas 量 `-apple-system` / `ui-rounded` 跟 monospace 一样宽 = 没有。有就一个字节都不下载、主程序同步启动，跟以前完全一样。
   - 主程序包在 `main()` 里，等字体加载完再启动（字宽/字距校准都在启动时量）；最多等 3 秒，失败或超时用系统字体，晚到的字体不启用。
   - Roboto Flex 按 (SF 字重, 宽窄) 拆 6 个文件：它越窄笔画越粗、越宽越细，SF 不是这样，按 iPhone 截图「1」竖笔宽 ÷ 字高逐档对的（数字/日光/世界/指针四处误差 ≤2%），数值和推断部分写在 `tools/build-standby-fonts.py`。改了档位要同步 `SANS_FACES`。
