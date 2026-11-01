@@ -560,6 +560,12 @@ function layoutChecks(tag, g) {
   conOut.split(/\r?\n/).filter(l => /^(FAIL|显示一致性)/.test(l)).forEach(l => console.log('  ' + l));
   check('待机显示在各种设备/缩放下显示一致（明细：node tests/consistency.cjs）', con.status === 0, (conOut.match(/显示一致性：.*/) || ['没跑完'])[0]);
 
+  /* ---------- 电脑「安装成应用」的独立窗口：画框不算标题栏、最小化不写坏（tests/window.cjs，约 20 秒） ---------- */
+  const win = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'window.cjs')], { encoding: 'utf8', env: process.env });
+  const winOut = (win.stdout || '') + (win.stderr || '');
+  winOut.split(/\r?\n/).filter(l => /^(FAIL|独立窗口)/.test(l)).forEach(l => console.log('  ' + l));
+  check('独立窗口画框正确（明细：node tests/window.cjs）', win.status === 0, (winOut.match(/独立窗口：.*/) || ['没跑完'])[0]);
+
   server.close();
   console.log(`\n${pass} 通过，${fail} 失败`);
   process.exit(fail ? 1 : 0);

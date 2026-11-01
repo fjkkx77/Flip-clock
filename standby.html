@@ -269,7 +269,8 @@ const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate(
 // 画框参照和主页一样：没有浏览器界面时用 outer（iPhone 主屏幕模式下 innerHeight 会跳）
 function getFrame() {
     const noUI = navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
-    if (noUI && outerWidth > 0 && outerHeight > 0) return { w: outerWidth, h: outerHeight };
+    // 只有触屏设备才信 outer：电脑上的独立窗口有标题栏，最小化时还会变成 159×27（Windows 实测）
+    if (noUI && matchMedia('(pointer: coarse)').matches && outerWidth > 0 && outerHeight > 0) return { w: outerWidth, h: outerHeight };
     const vv = window.visualViewport;
     return vv ? { w: vv.width, h: vv.height } : { w: innerWidth, h: innerHeight };
 }
@@ -282,6 +283,7 @@ function safeTop() { return parseFloat(getComputedStyle(insetProbe).paddingTop) 
 const view = { rot: false, s: 1, bw: W, bh: H, ox: 0, oy: 0 };
 let onFit = [];
 function fit() {
+    if (document.hidden) return;   // 隐藏时窗口尺寸不可信，回前台再量
     const f = getFrame(), rot = f.h > f.w;
     const sw = rot ? f.h : f.w, sh = rot ? f.w : f.h;    // 屏幕在画板方向上的长、短边（CSS px）
     // 只在「竖着拿、整块转过来」时让开状态栏：它在屏幕顶上 = 画板的左边。
@@ -1279,7 +1281,7 @@ async function keepAwake() {
     try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } catch (e) { wakeLock = null; }
 }
 ['click', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, keepAwake, true));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); refresh(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { fit(); keepAwake(); refresh(); } });
 window.addEventListener('pageshow', refresh);
 
 /* ================= 启动 ================= */

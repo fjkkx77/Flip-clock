@@ -1108,7 +1108,8 @@
             const noBrowserUI = window.navigator.standalone === true
                 || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches
                 || !!(document.fullscreenElement || document.webkitFullscreenElement);
-            if (noBrowserUI && window.outerWidth > 0 && window.outerHeight > 0)
+            // 只有触屏设备才信 outer：电脑上的独立窗口有标题栏（outer 比页面大），最小化时还会变成 159×27（Windows 实测）
+            if (noBrowserUI && matchMedia('(pointer: coarse)').matches && window.outerWidth > 0 && window.outerHeight > 0)
                 return { x: 0, y: 0, w: window.outerWidth, h: window.outerHeight, src: 'outer' };
             if (vv) return { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height, src: 'visualViewport' };
             return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight, src: 'inner' };
@@ -1118,7 +1119,7 @@
         const isEditing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || a.tagName === 'INPUT'); };
         let frame = getFrame();
         function syncFrame() {
-            if (isEditing()) return;
+            if (isEditing() || document.hidden) return;   // 隐藏时窗口尺寸不可信，回前台由 catchUp 补量
             frame = getFrame();
             const s = document.documentElement.style;
             s.setProperty('--fx', frame.x + 'px'); s.setProperty('--fy', frame.y + 'px');
@@ -1249,7 +1250,7 @@
         // 页面从挂起中恢复（锁屏回来、切回标签页、从后台缓存恢复）时立刻追上真实时间，不等下一次定时器。
         // 只靠 visibilitychange 不够：页面被冻结再解冻时它不一定触发（实测 CDP 冻结恢复后只有 resume），要几个一起听
         // 追的时候直接换字不播翻页：离开了好一会儿，几位数字一起翻，又是开头那种"上新下旧"的半截画面
-        function catchUp() { updateClock(false); renderPomo(false); renderTimer(false); ensureTicker(); syncWakeLock(); }   // 都是幂等的，多跑一次没有代价
+        function catchUp() { syncFrame(); updateClock(false); renderPomo(false); renderTimer(false); ensureTicker(); syncWakeLock(); }   // 都是幂等的，多跑一次没有代价
         document.addEventListener('visibilitychange', catchUp);
         document.addEventListener('resume', catchUp);
         window.addEventListener('pageshow', catchUp);

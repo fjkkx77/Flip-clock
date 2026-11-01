@@ -4,7 +4,7 @@
 
 ## 一句话
 `index.html` 翻页时钟（时钟 / 番茄钟 / 计时器）+ `standby.html` 仿 iPhone 待机显示，GitHub Pages 部署：push 到 `main` 即上线
-（https://fjkkx77.github.io/Flip-clock/ ）。改完先跑 `node tests/run.cjs`（181 条，最后两条是「布局不变量」「显示一致性」，共约 9 分钟），必须全绿再推。
+（https://fjkkx77.github.io/Flip-clock/ ）。改完先跑 `node tests/run.cjs`（183 条，最后三条是「布局不变量」「显示一致性」「独立窗口」，共约 9 分钟），必须全绿再推。
 
 ## 结构上不能动错的几处
 1. **布局**：`.view-container` 三行网格 `上附属 | 卡片 | 下附属`，上下行等高 → 卡片永远在正中。
@@ -14,8 +14,10 @@
    2026-10-28 前横屏浮层只给顶上留「安全区 + 8px」、没算顶栏高度，番茄钟/计时器的子标签和输入框被顶栏盖住（用户两张截图）。
    `--fit` 没有 0.3 下限了（只防除零）：空间不够只能缩卡片，不能把东西挤得叠在一起。
    **加了新的浮在上层（position:absolute/fixed、不占位置）的东西，它可能盖住的每样东西都要算进约束，并跑 `tests/layout.cjs`。**
-2. **画框**：居中参照是 `getFrame()` 实测（无浏览器界面用 outer 尺寸，否则 visualViewport），
+2. **画框**：居中参照是 `getFrame()` 实测（**触屏设备**无浏览器界面时用 outer 尺寸，否则 visualViewport），
    别改回 `top:50%` / `innerHeight`。输入框获得焦点时画框锁住不重量（防键盘把时钟压小）。
+   **电脑上不能信 outer（2026-11-01 用户报）**：独立窗口的 outer 含标题栏（1001×702 vs 页面 986×664，卡片偏下约 19px），最小化时变成 159×27（有界面 Chrome `--app` + `Browser.setWindowBounds` 真最小化实测）。
+   按钮有焦点时最小化 → `focusout` 50ms 后 `syncFrame` 把 159×27 写进画框 → 再打开时界面缩在左上角。所以隐藏时不量（`document.hidden`），回前台 `catchUp` 补量；待机页 `fit()` 同样处理。`tests/window.cjs` 守着。
 3. **尺寸按包装器自己的宽高算（2026-10-28 起）**：`--aw/--ah` = 包装器宽/高（强制横屏时在 `body.force-landscape #app-wrapper` 那一处对调），
    包装器里面的长度一律写 `calc(var(--aw) * 0.03)` 这种，**别再写 vw/vh**（量的是浏览器窗口，转了 90° 方向就反，以前因此三套样式各抄一遍）。
    「竖屏版」= `@container app (orientation: portrait)`；「紧凑版」= `#app-wrapper.compact`，由 `fitLayout` 实测挂上：
@@ -144,7 +146,10 @@
 - 弹出键盘时画框锁定的实际效果；强制横屏下系统键盘仍按竖屏方向弹出（系统行为，改不了）
 
 ## 测试
-`node tests/run.cjs`：起本地服务 + headless Chrome（路径在 `tests/cdp.js`），181 条，最后两条调用 `tests/layout.cjs` 和 `tests/consistency.cjs`。
+`node tests/run.cjs`：起本地服务 + headless Chrome（路径在 `tests/cdp.js`），183 条，最后三条调用 `tests/layout.cjs`、`tests/consistency.cjs`、`tests/window.cjs`。
+
+**独立窗口 `tests/window.cjs`（2026-11-01 加，约 20 秒）**：headless 没有真最小化，这里模拟 outer 和 `document.hidden`。旧版 6 条红。
+真窗口复现：起有界面 Chrome `--app=<本地地址>`（display-mode 会是 standalone），用 `Input.dispatchMouseEvent` **真点**「开始」让按钮拿到焦点（脚本 `.click()` 不给焦点，复现不出来），再 `Browser.setWindowBounds` 设 `minimized`/`normal`，录 outer 和 `--fw`。
 
 **显示一致性 `tests/consistency.cjs`（2026-10-29 加，约 1 分钟）**：待机显示在 22 种设备/像素密度/浏览器缩放（50%–300%）下，每段字和漂浮数字框的屏幕位置换算回 852×393 核心区，跟 iPhone 14 Pro 横屏比差 ≤0.5pt。
 用户要求「不管放大缩小、什么平台什么尺寸都一致」。做过变异检验：让位置随窗口宽度偏一点，它报 8 种不一致。加新设备往 `DEVICES` 里添。
