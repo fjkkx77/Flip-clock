@@ -101,6 +101,15 @@ async function page(w, h, coarse, standalone, file, title) {
   check('待机页无 JS 报错', c.errors.length === 0, c.errors);
   c.close();
 
+  /* ---------- 图标：电脑用带透明边的 any 版（跟 Chrome 自动生成的同尺寸），手机裁形状用铺满的 maskable 版 ---------- */
+  const mf = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.webmanifest'), 'utf8'));
+  const by = p => mf.icons.filter(i => i.purpose === p).map(i => i.src);
+  check('manifest：any 和 maskable 各两张且文件都在', by('any').length === 2 && by('maskable').length === 2 && mf.icons.every(i => fs.existsSync(path.join(ROOT, i.src))), mf.icons);
+  c = await open(1000, 700, 1); await c.goto(base);
+  const alpha = await c.ev(`Promise.all(${JSON.stringify(by('any').concat(by('maskable')))}.map(u => new Promise(res => { const m = new Image(); m.onload = () => { const k = document.createElement('canvas'); k.width = m.width; k.height = m.height; const g = k.getContext('2d'); g.drawImage(m, 0, 0); res(g.getImageData(0, 0, 1, 1).data[3]); }; m.src = u; })))`);
+  check('any 版四角透明、maskable 版四角不透明', alpha[0] === 0 && alpha[1] === 0 && alpha[2] === 255 && alpha[3] === 255, alpha);
+  c.close();
+
   server.close();
   console.log(`独立窗口：${pass} 通过，${fail} 失败`);
   process.exit(fail ? 1 : 0);

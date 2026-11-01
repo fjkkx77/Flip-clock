@@ -116,6 +116,9 @@
 - 气温（数字样式右上角）默认关：要定位 + Open-Meteo（无需密钥，CORS 放行；国内不翻墙能否访问未验证）。
 - 「横屏闲置 1 分钟自动进入」默认关：iPhone 是充电+横放触发，Safari 没有 Battery API 拿不到充电状态。
 
+## 图标（2026-11-01）
+`icons/icon-any-*.png` 给电脑桌面（透明边 12.5%、圆角，跟 Chrome 自动生成的图标同尺寸，由 `python tools/build-icons.py 0.125 0.085` 从铺满版裁出）；`icon-192/512` 铺满版作 maskable 给安卓；`apple-touch-icon` 给 iPhone，必须不透明。已安装的电脑应用要卸载重装才换图标。
+
 ## localStorage 键
 `theme`（light/缺省=暗）、`savedQuote`（存过就用，空字符串也算；只在操作表点"保存"时写）、`forceLandscape`（1/0）、
 `tab`、`timerMode`（up/down）、`focusMin`、`breakMin`、`pomoState`、`swState`、`cdState`、
